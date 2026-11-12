@@ -1,0 +1,7 @@
+<svg width="400" height="130" viewBox="0 0 400 130" fill="none" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Terracotta Layer -->
+  <path d="M0 130 L0 90 C70 65, 170 85, 250 60 C320 38, 360 44, 400 35 L400 130 Z" fill="#A85E2B"/>
+
+  <!-- Forest Green Accent Wave in Bottom-Right -->
+  <path d="M140 130 C200 95, 290 82, 400 80 L400 130 Z" fill="#263C29"/>
+</svg>

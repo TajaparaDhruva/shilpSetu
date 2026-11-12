@@ -1,0 +1,596 @@
+import * as WebBrowser from 'expo-web-browser';
+import * as Linking from 'expo-linking';
+import { Platform } from 'react-native';
+
+// Complete any pending auth session in web browser
+WebBrowser.maybeCompleteAuthSession();
+
+const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+
+// Session storage key
+const SESSION_STORAGE_KEY = 'shilpsetu_auth_session';
+
+// In-memory session cache for fast access
+let currentSession = null;
+let currentUser = null;
+
+// Lightweight in-memory/web storage adapter
+const storage = {
+  async getItem(key) {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        return window.localStorage.getItem(key);
+      }
+    } catch {
+      // Ignore web storage errors
+    }
+    return null;
+  },
+  async setItem(key, value) {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.setItem(key, value);
+      }
+    } catch {
+      // Ignore web storage errors
+    }
+  },
+  async removeItem(key) {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.removeItem(key);
+      }
+    } catch {
+      // Ignore web storage errors
+    }
+  },
+};
+
+/**
+ * Check whether Supabase environment variables are configured
+ */
+export const isSupabaseConfigured = () => {
+  return Boolean(
+    SUPABASE_URL &&
+    SUPABASE_ANON_KEY &&
+    !SUPABASE_URL.includes('your_supabase_project_url') &&
+    !SUPABASE_ANON_KEY.includes('your_supabase_publishable_key')
+  );
+};
+
+const assertConfigured = () => {
+  if (!isSupabaseConfigured()) {
+    throw new Error(
+      'Supabase is not configured yet. Please configure EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY in your frontend .env file.'
+    );
+  }
+};
+
+/**
+ * Parse URL fragment (hash) or query string into key-value map
+ */
+const parseAuthParams = (url) => {
+  const params = {};
+  if (!url) return params;
+
+  // Check hash fragment first (#access_token=...)
+  const hashIndex = url.indexOf('#');
+  const queryIndex = url.indexOf('?');
+
+  let queryString = '';
+  if (hashIndex !== -1) {
+    queryString = url.substring(hashIndex + 1);
+  } else if (queryIndex !== -1) {
+    queryString = url.substring(queryIndex + 1);
+  }
+
+  if (queryString) {
+    const pairs = queryString.split('&');
+    for (const pair of pairs) {
+      const [key, value] = pair.split('=');
+      if (key && value) {
+        params[decodeURIComponent(key.replace(/\+/g, ' '))] = decodeURIComponent(
+          value.replace(/\+/g, ' ')
+        );
+      }
+    }
+  }
+
+  return params;
+};
+
+/**
+ * Set active session in memory and persistent storage
+ */
+const saveSession = async (sessionData) => {
+  currentSession = sessionData;
+  currentUser = sessionData?.user || null;
+  if (sessionData) {
+    await storage.setItem(SESSION_STORAGE_KEY, JSON.stringify(sessionData));
+  } else {
+    await storage.removeItem(SESSION_STORAGE_KEY);
+  }
+};
+
+/**
+ * A. Email and Password Login
+ * Authenticates user via Supabase Auth REST endpoint: /auth/v1/token?grant_type=password
+ */
+export async function loginWithEmail(email, password) {
+  assertConfigured();
+
+  const trimmedEmail = (email || '').trim().toLowerCase();
+  if (!trimmedEmail) {
+    throw new Error('Please enter your email address.');
+  }
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(trimmedEmail)) {
+    throw new Error('Please enter a valid email address.');
+  }
+  if (!password || password.length < 6) {
+    throw new Error('Password must be at least 6 characters.');
+  }
+
+  const endpoint = `${SUPABASE_URL}/auth/v1/token?grant_type=password`;
+
+  let response;
+  try {
+    response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_ANON_KEY,
+      },
+      body: JSON.stringify({
+        email: trimmedEmail,
+        password,
+      }),
+    });
+  } catch (networkError) {
+    throw new Error('Network error: Unable to connect to Supabase authentication server.');
+  }
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    const errorMsg = data.error_description || data.msg || data.message || 'Invalid email or password.';
+    const lower = errorMsg.toLowerCase();
+    if (lower.includes('email not confirmed') || data.error_code === 'email_not_confirmed') {
+      throw new Error('Email not confirmed. Please check your email inbox to verify, or disable "Confirm email" in Supabase Dashboard.');
+    } else if (lower.includes('invalid login credentials')) {
+      throw new Error('Invalid email or password. If you just registered, your Supabase project may require email confirmation.');
+    }
+    throw new Error(errorMsg);
+  }
+
+  // Format and save session
+  const session = {
+    access_token: data.access_token,
+    refresh_token: data.refresh_token,
+    expires_in: data.expires_in,
+    expires_at: Math.floor(Date.now() / 1000) + (data.expires_in || 3600),
+    user: data.user,
+  };
+
+  await saveSession(session);
+
+  // Try fetching profile
+  let profile = null;
+  try {
+    profile = await getUserProfile(data.user.id, data.access_token);
+  } catch {
+    // If profile cannot be loaded immediately, user object is still valid
+  }
+
+  return {
+    user: data.user,
+    session,
+    profile,
+  };
+}
+
+/**
+ * Sign Up with Email and Password
+ */
+export async function signUpWithEmail(email, password, fullName = '') {
+  assertConfigured();
+
+  const trimmedEmail = (email || '').trim().toLowerCase();
+  if (!trimmedEmail) throw new Error('Please enter your email address.');
+  if (!password || password.length < 6) throw new Error('Password must be at least 6 characters.');
+
+  const endpoint = `${SUPABASE_URL}/auth/v1/signup`;
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: SUPABASE_ANON_KEY,
+    },
+    body: JSON.stringify({
+      email: trimmedEmail,
+      password,
+      data: {
+        full_name: fullName.trim(),
+        name: fullName.trim(),
+        role: 'customer',
+      },
+    }),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.msg || data.error_description || data.message || 'Registration failed.');
+  }
+
+  const needsEmailConfirmation = Boolean(
+    data.user && !data.session && !data.user.confirmed_at && !data.user.email_confirmed_at
+  );
+
+  return {
+    user: data.user,
+    session: data.session,
+    needsEmailConfirmation,
+  };
+}
+
+/**
+ * Process OAuth callback URL containing access_token or authorization code
+ */
+async function processAuthCallbackUrl(url) {
+  const params = parseAuthParams(url);
+
+  if (params.error) {
+    throw new Error(params.error_description || params.error || 'Google authentication failed.');
+  }
+
+  if (params.access_token) {
+    const session = {
+      access_token: params.access_token,
+      refresh_token: params.refresh_token || '',
+      expires_in: parseInt(params.expires_in || '3600', 10),
+      expires_at: Math.floor(Date.now() / 1000) + parseInt(params.expires_in || '3600', 10),
+      token_type: params.token_type || 'bearer',
+    };
+
+    const user = await fetchUserFromToken(session.access_token);
+    session.user = user;
+    await saveSession(session);
+
+    let profile = null;
+    try {
+      profile = await getUserProfile(user.id, session.access_token);
+    } catch {
+      // Fallback
+    }
+
+    return {
+      user,
+      session,
+      profile,
+    };
+  }
+
+  if (params.code) {
+    const tokenEndpoint = `${SUPABASE_URL}/auth/v1/token?grant_type=pkce`;
+    const tokenResponse = await fetch(tokenEndpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_ANON_KEY,
+      },
+      body: JSON.stringify({
+        auth_code: params.code,
+      }),
+    });
+
+    const tokenData = await tokenResponse.json();
+    if (!tokenResponse.ok) {
+      throw new Error(tokenData.error_description || tokenData.msg || 'Failed to exchange authorization code.');
+    }
+
+    const session = {
+      access_token: tokenData.access_token,
+      refresh_token: tokenData.refresh_token,
+      expires_in: tokenData.expires_in,
+      expires_at: Math.floor(Date.now() / 1000) + (tokenData.expires_in || 3600),
+      user: tokenData.user,
+    };
+
+    await saveSession(session);
+
+    let profile = null;
+    try {
+      profile = await getUserProfile(tokenData.user.id, session.access_token);
+    } catch {
+      // Fallback
+    }
+
+    return {
+      user: tokenData.user,
+      session,
+      profile,
+    };
+  }
+
+  throw new Error('Authentication callback was received but contained no access token.');
+}
+
+/**
+ * B. Google OAuth Authentication
+ * Initiates Google OAuth using Supabase Auth with Expo-compatible deep linking
+ */
+export async function loginWithGoogle() {
+  assertConfigured();
+
+  // 1. Verify that Google OAuth is enabled in Supabase project settings
+  try {
+    const settingsRes = await fetch(`${SUPABASE_URL}/auth/v1/settings`, {
+      headers: { apikey: SUPABASE_ANON_KEY },
+    });
+    if (settingsRes.ok) {
+      const settings = await settingsRes.json();
+      if (settings?.external && settings.external.google === false) {
+        throw new Error(
+          'Google authentication is NOT enabled yet in your Supabase Dashboard.\n\nPlease go to Supabase Dashboard -> Authentication -> Providers -> Google, toggle it ON, and add your Google Client ID and Secret.'
+        );
+      }
+    }
+  } catch (err) {
+    if (err.message.includes('Google authentication is NOT enabled')) {
+      throw err;
+    }
+    // Proceed if settings check had transient network glitch
+  }
+
+  // 2. Construct the deep linking redirect URL for Expo
+  const redirectUrl = Linking.createURL('auth/callback');
+
+  const authUrl = `${SUPABASE_URL}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(
+    redirectUrl
+  )}`;
+
+  // Web Platform: direct browser redirect
+  if (Platform.OS === 'web' && typeof window !== 'undefined') {
+    window.location.href = authUrl;
+    return new Promise(() => {}); // Wait for page unload
+  }
+
+  // Mobile Platform: Dual-listener with openAuthSessionAsync & Linking event
+  return new Promise(async (resolve, reject) => {
+    let handled = false;
+    let subscription = null;
+
+    const cleanup = () => {
+      if (subscription) {
+        subscription.remove();
+        subscription = null;
+      }
+      try {
+        WebBrowser.dismissAuthSession();
+      } catch {}
+    };
+
+    const handleCallbackUrl = async (url) => {
+      if (handled || !url) return;
+      handled = true;
+      cleanup();
+
+      try {
+        const sessionData = await processAuthCallbackUrl(url);
+        resolve(sessionData);
+      } catch (err) {
+        reject(err);
+      }
+    };
+
+    // Deep link listener for OS redirects
+    subscription = Linking.addEventListener('url', (event) => {
+      if (
+        event?.url &&
+        (event.url.includes('access_token') ||
+          event.url.includes('code=') ||
+          event.url.includes('error='))
+      ) {
+        handleCallbackUrl(event.url);
+      }
+    });
+
+    try {
+      const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUrl);
+
+      if (handled) return;
+
+      if (result.type === 'success' && result.url) {
+        await handleCallbackUrl(result.url);
+      } else if (result.type === 'cancel' || result.type === 'dismiss') {
+        handled = true;
+        cleanup();
+        const cancelError = new Error('Google sign-in was cancelled.');
+        cancelError.code = 'USER_CANCELLED';
+        reject(cancelError);
+      } else {
+        handled = true;
+        cleanup();
+        reject(
+          new Error(
+            'Google login window was closed. If it was loading endlessly, check your Supabase Redirect URLs.'
+          )
+        );
+      }
+    } catch (browserErr) {
+      if (handled) return;
+      handled = true;
+      cleanup();
+      reject(browserErr);
+    }
+  });
+}
+
+/**
+ * Fetch authenticated user from Supabase using access token
+ */
+async function fetchUserFromToken(accessToken) {
+  const endpoint = `${SUPABASE_URL}/auth/v1/user`;
+  const response = await fetch(endpoint, {
+    method: 'GET',
+    headers: {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.msg || data.message || 'Failed to retrieve authenticated user.');
+  }
+  return data;
+}
+
+/**
+ * C. Forgot Password
+ * Sends a password recovery email via Supabase Auth
+ */
+export async function resetPassword(email) {
+  assertConfigured();
+
+  const trimmedEmail = (email || '').trim().toLowerCase();
+  if (!trimmedEmail) {
+    throw new Error('Please enter your email address.');
+  }
+
+  const endpoint = `${SUPABASE_URL}/auth/v1/recover`;
+  const redirectUrl = Linking.createURL('auth/reset-password');
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: SUPABASE_ANON_KEY,
+    },
+    body: JSON.stringify({
+      email: trimmedEmail,
+      redirect_to: redirectUrl,
+    }),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    const message = data.error_description || data.msg || data.message || 'Failed to send recovery email.';
+    throw new Error(message);
+  }
+
+  return {
+    success: true,
+    message: 'Password reset instructions have been sent to your email.',
+    data,
+  };
+}
+
+/**
+ * Log out and clear session
+ */
+export async function logout() {
+  if (isSupabaseConfigured() && currentSession?.access_token) {
+    try {
+      const endpoint = `${SUPABASE_URL}/auth/v1/logout`;
+      await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${currentSession.access_token}`,
+        },
+      });
+    } catch {
+      // Ignore network errors on logout
+    }
+  }
+
+  await saveSession(null);
+  return { success: true };
+}
+
+/**
+ * D. Get Currently Authenticated User
+ */
+export async function getCurrentUser() {
+  if (currentUser) {
+    return currentUser;
+  }
+
+  // Try restoring from storage
+  try {
+    const stored = await storage.getItem(SESSION_STORAGE_KEY);
+    if (stored) {
+      const session = JSON.parse(stored);
+      if (session?.access_token) {
+        currentSession = session;
+        currentUser = session.user || null;
+
+        // Verify if token is still valid
+        if (isSupabaseConfigured()) {
+          try {
+            const user = await fetchUserFromToken(session.access_token);
+            currentUser = user;
+            session.user = user;
+            await saveSession(session);
+            return user;
+          } catch {
+            // Token expired or invalid
+            await saveSession(null);
+            return null;
+          }
+        }
+        return currentUser;
+      }
+    }
+  } catch {
+    // Ignore storage read error
+  }
+
+  return null;
+}
+
+/**
+ * E. Get User Profile from public.profiles table
+ */
+export async function getUserProfile(userId, token = null) {
+  assertConfigured();
+
+  const accessToken = token || currentSession?.access_token;
+  if (!accessToken) {
+    throw new Error('Authentication required to access user profile.');
+  }
+
+  const endpoint = `${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}&select=*`;
+
+  const response = await fetch(endpoint, {
+    method: 'GET',
+    headers: {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.message || data.hint || 'Failed to retrieve profile.');
+  }
+
+  if (Array.isArray(data) && data.length > 0) {
+    return data[0];
+  }
+
+  return null;
+}
+
+// Backward-compatible named exports
+export const signInWithEmail = loginWithEmail;
+export const signInWithGoogle = loginWithGoogle;
+export const sendPasswordResetEmail = resetPassword;

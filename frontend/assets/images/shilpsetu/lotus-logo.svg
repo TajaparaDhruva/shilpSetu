@@ -1,0 +1,24 @@
+<svg width="100" height="90" viewBox="0 0 100 90" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Lotus Center Petal -->
+  <path d="M50 12 C43 28, 42 48, 50 64 C58 48, 57 28, 50 12 Z" stroke="#263C29" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M50 22 V54" stroke="#263C29" stroke-width="2" stroke-linecap="round"/>
+
+  <!-- Left Inner Petal -->
+  <path d="M50 64 C35 56, 26 38, 30 22 C39 28, 44 44, 50 64 Z" stroke="#263C29" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Right Inner Petal -->
+  <path d="M50 64 C65 56, 74 38, 70 22 C61 28, 56 44, 50 64 Z" stroke="#263C29" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Left Outer Petal -->
+  <path d="M48 64 C28 62, 12 48, 16 34 C26 40, 36 52, 48 64 Z" stroke="#263C29" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Right Outer Petal -->
+  <path d="M52 64 C72 62, 88 48, 84 34 C74 40, 64 52, 52 64 Z" stroke="#263C29" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Terracotta Base Petals -->
+  <path d="M50 65 C34 70, 20 73, 14 62 C22 58, 36 61, 50 65 Z" stroke="#A85E2B" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M50 65 C66 70, 80 73, 86 62 C78 58, 64 61, 50 65 Z" stroke="#A85E2B" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Terracotta Base Arc -->
+  <path d="M30 68 C44 75, 56 75, 70 68" stroke="#A85E2B" stroke-width="2.6" stroke-linecap="round"/>
+</svg>
