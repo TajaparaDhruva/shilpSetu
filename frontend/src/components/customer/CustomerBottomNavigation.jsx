@@ -12,7 +12,7 @@ const navProfile = require('@/assets/images/shilpsetu/nav-profile.svg');
 
 const TABS = [
   { key: 'home', label: 'Home', icon: navHome },
-  { key: 'categories', label: 'Categories', icon: navCategories },
+  { key: 'explore', label: 'Explore', icon: navCategories },
   { key: 'orders', label: 'Orders', icon: navOrders },
   { key: 'wishlist', label: 'Wishlist', icon: navWishlist },
   { key: 'profile', label: 'Profile', icon: navProfile },

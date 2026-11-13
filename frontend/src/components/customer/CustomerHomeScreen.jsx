@@ -20,15 +20,18 @@ import CuratedProducts from './CuratedProducts';
 import CustomerBottomNavigation from './CustomerBottomNavigation';
 
 import { ShilpColors } from '@/constants/shilpSetuTheme';
+import { getCategories } from '@/services/categoryService';
+import { getFeaturedCollections } from '@/services/collectionService';
 import {
-  fetchCategories,
-  fetchFeaturedCollections,
-  fetchCuratedProducts,
+  getCuratedProducts,
   searchProducts,
-  fetchProductsByCategory,
-  toggleWishlist,
-  isInWishlist,
+  getProductsByCategory,
 } from '@/services/productService';
+import {
+  getWishlist,
+  toggleWishlist as toggleUserWishlist,
+  isInWishlist,
+} from '@/services/wishlistService';
 import { logout } from '@/services/auth';
 
 export default function CustomerHomeScreen() {
@@ -49,14 +52,17 @@ export default function CustomerHomeScreen() {
   const loadData = useCallback(async () => {
     try {
       const [cats, cols, prods] = await Promise.all([
-        fetchCategories(),
-        fetchFeaturedCollections(),
-        fetchCuratedProducts(),
+        getCategories(),
+        getFeaturedCollections(),
+        getCuratedProducts(),
       ]);
 
       setCategories(cats);
       setCollections(cols);
       setProducts(prods);
+
+      // Preload user wishlist
+      await getWishlist();
     } catch {
       // Fallbacks handle error gracefully
     } finally {
@@ -82,10 +88,10 @@ export default function CustomerHomeScreen() {
     setSearchQuery(text);
     if (!text.trim()) {
       if (selectedCategory) {
-        const filtered = await fetchProductsByCategory(selectedCategory);
+        const filtered = await getProductsByCategory(selectedCategory);
         setProducts(filtered);
       } else {
-        const curated = await fetchCuratedProducts();
+        const curated = await getCuratedProducts();
         setProducts(curated);
       }
       return;
@@ -99,21 +105,21 @@ export default function CustomerHomeScreen() {
   const handleSelectCategory = async (cat) => {
     if (selectedCategory === cat.name) {
       setSelectedCategory(null);
-      const curated = await fetchCuratedProducts();
+      const curated = await getCuratedProducts();
       setProducts(curated);
     } else {
       setSelectedCategory(cat.name);
-      const filtered = await fetchProductsByCategory(cat.name);
+      const filtered = await getProductsByCategory(cat.name);
       setProducts(filtered);
     }
   };
 
   // Wishlist toggle
   const handleWishlistToggle = async (product) => {
-    const isNowWishlisted = await toggleWishlist(product.id);
+    const res = await toggleUserWishlist(product.id);
     setWishlistIds((prev) => {
       const updated = new Set(prev);
-      if (isNowWishlisted) {
+      if (res.inWishlist) {
         updated.add(product.id);
       } else {
         updated.delete(product.id);
@@ -165,8 +171,8 @@ export default function CustomerHomeScreen() {
           },
         ]
       );
-    } else if (tabKey === 'categories') {
-      Alert.alert('Categories', 'Browse all handcrafted Indian categories.');
+    } else if (tabKey === 'explore' || tabKey === 'categories') {
+      router.push('/(customer)/explore');
     } else if (tabKey === 'orders') {
       Alert.alert('My Orders', 'You have no past orders yet.');
     } else if (tabKey === 'wishlist') {
@@ -199,13 +205,7 @@ export default function CustomerHomeScreen() {
       <HomeSearchBar
         value={searchQuery}
         onChangeText={handleSearch}
-        onFilterPress={() =>
-          Alert.alert(
-            'Filter Handicrafts',
-            'Filter by Price, State of Origin, or Artisan Rating.',
-            [{ text: 'OK' }]
-          )
-        }
+        onFilterPress={() => router.push('/(customer)/explore')}
       />
 
       {/* Main Scrollable Feed */}
