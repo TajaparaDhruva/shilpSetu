@@ -26,7 +26,6 @@ import {
 
 const lotusLogo = require('@/assets/images/shilpsetu/lotus-logo.svg');
 const lotusDivider = require('@/assets/images/shilpsetu/lotus-divider.svg');
-const topLeftBranch = require('@/assets/images/shilpsetu/top-left-branch.svg');
 const topRightDecor = require('@/assets/images/shilpsetu/top-right-decor.svg');
 
 export default function SignUpScreen() {
@@ -76,7 +75,7 @@ export default function SignUpScreen() {
     setErrorMessage('');
     try {
       await loginWithGoogle();
-      router.replace('/');
+      router.replace('/role-setup');
     } catch (err) {
       if (err.code === 'USER_CANCELLED') {
         return;
@@ -92,8 +91,7 @@ export default function SignUpScreen() {
       <StatusBar style="dark" backgroundColor={ShilpColors.background} />
 
       <View style={styles.decorContainer} pointerEvents="none">
-        <Image source={topLeftBranch} style={styles.topLeftBranch} contentFit="contain" />
-        <Image source={topRightDecor} style={styles.topRightDecor} contentFit="contain" />
+        <Image source={topRightDecor} style={styles.topRightDecor} contentFit="fill" />
       </View>
 
       <SafeAreaView style={styles.safeArea}>
@@ -219,19 +217,12 @@ const styles = StyleSheet.create({
     zIndex: 1,
     overflow: 'hidden',
   },
-  topLeftBranch: {
-    position: 'absolute',
-    top: -10,
-    left: -10,
-    width: 145,
-    height: 180,
-  },
   topRightDecor: {
     position: 'absolute',
-    top: -10,
-    right: -10,
-    width: 135,
-    height: 170,
+    top: 0,
+    right: 0,
+    width: 160,
+    height: 240,
   },
   headerSection: {
     alignItems: 'center',
@@ -265,9 +256,9 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   lotusDivider: {
-    width: 26,
-    height: 16,
-    marginVertical: 4,
+    width: 180,
+    height: 20,
+    marginVertical: 6,
   },
   subtitle: {
     fontSize: 13.5,

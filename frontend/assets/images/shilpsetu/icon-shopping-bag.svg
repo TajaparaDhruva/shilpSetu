@@ -1,0 +1,14 @@
+<svg width="56" height="56" viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Shopping bag outline for Customer role card -->
+  <!-- Bag body -->
+  <path d="M14 20 L14 44 C14 45.6 15.4 47 17 47 L39 47 C40.6 47 42 45.6 42 44 L42 20 Z"
+    stroke="#A07850" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- Bag top flap -->
+  <path d="M12 20 L44 20" stroke="#A07850" stroke-width="2" stroke-linecap="round"/>
+  <!-- Handle -->
+  <path d="M21 20 L21 15 C21 11.2 24.2 8 28 8 C31.8 8 35 11.2 35 15 L35 20"
+    stroke="#A07850" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- Small diamond/decorative detail -->
+  <rect x="25" y="28" width="6" height="6" rx="0.5" transform="rotate(45 28 31)"
+    stroke="#A07850" stroke-width="1.5" fill="none"/>
+</svg>

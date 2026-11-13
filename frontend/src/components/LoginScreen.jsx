@@ -30,11 +30,9 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 // Visual Assets
 const lotusLogo = require('@/assets/images/shilpsetu/lotus-logo.svg');
 const lotusDivider = require('@/assets/images/shilpsetu/lotus-divider.svg');
-const topLeftBranch = require('@/assets/images/shilpsetu/top-left-branch.svg');
 const topRightDecor = require('@/assets/images/shilpsetu/top-right-decor.svg');
 const bottomLeftBranch = require('@/assets/images/shilpsetu/bottom-left-branch.svg');
 const bottomWaves = require('@/assets/images/shilpsetu/bottom-waves.svg');
-const terracottaPot = require('@/assets/images/shilpsetu/terracotta-pot.svg');
 const checkIcon = require('@/assets/images/shilpsetu/icon-check.svg');
 
 export default function LoginScreen({ onLoginSuccess }) {
@@ -109,9 +107,8 @@ export default function LoginScreen({ onLoginSuccess }) {
       if (onLoginSuccess) {
         onLoginSuccess(data);
       } else {
-        Alert.alert('Login Successful', 'Welcome back to ShilpSetu!', [
-          { text: 'OK', onPress: () => router.replace('/') }
-        ]);
+        // Always go to role-setup so the user can confirm or choose their role
+        router.replace('/role-setup');
       }
     } catch (err) {
       const message = err.message || 'Login failed. Please verify your credentials.';
@@ -130,9 +127,7 @@ export default function LoginScreen({ onLoginSuccess }) {
       if (onLoginSuccess) {
         onLoginSuccess(result);
       } else {
-        Alert.alert('Google Sign-In Successful', 'Welcome to ShilpSetu!', [
-          { text: 'OK', onPress: () => router.replace('/') }
-        ]);
+        router.replace('/role-setup');
       }
     } catch (err) {
       if (err.code === 'USER_CANCELLED') {
@@ -161,28 +156,18 @@ export default function LoginScreen({ onLoginSuccess }) {
       {/* Decorative Corner & Background Graphics (Non-blocking) */}
       <View style={styles.decorContainer} pointerEvents="none">
         <Image
-          source={topLeftBranch}
-          style={styles.topLeftBranch}
-          contentFit="contain"
-        />
-        <Image
           source={topRightDecor}
           style={styles.topRightDecor}
-          contentFit="contain"
+          contentFit="fill"
         />
         <Image
           source={bottomWaves}
           style={styles.bottomWaves}
-          contentFit="cover"
+          contentFit="fill"
         />
         <Image
           source={bottomLeftBranch}
           style={styles.bottomLeftBranch}
-          contentFit="contain"
-        />
-        <Image
-          source={terracottaPot}
-          style={styles.terracottaPot}
           contentFit="contain"
         />
       </View>
@@ -374,7 +359,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     paddingHorizontal: 28,
-    paddingTop: Platform.OS === 'android' ? 16 : 8,
+    paddingTop: Platform.OS === 'android' ? 20 : 10,
     alignItems: 'center',
     justifyContent: 'flex-start',
   },
@@ -385,53 +370,38 @@ const styles = StyleSheet.create({
     zIndex: 1,
     overflow: 'hidden',
   },
-  topLeftBranch: {
-    position: 'absolute',
-    top: -10,
-    left: -10,
-    width: 145,
-    height: 180,
-  },
   topRightDecor: {
     position: 'absolute',
-    top: -10,
-    right: -10,
-    width: 135,
-    height: 170,
+    top: 0,
+    right: 0,
+    width: 160,
+    height: 240,
   },
   bottomWaves: {
     position: 'absolute',
     bottom: 0,
-    left: 0,
     right: 0,
-    width: SCREEN_WIDTH,
-    height: 110,
+    width: SCREEN_WIDTH * 0.72,
+    height: 180,
   },
   bottomLeftBranch: {
     position: 'absolute',
-    bottom: -10,
-    left: -10,
-    width: 135,
-    height: 155,
-  },
-  terracottaPot: {
-    position: 'absolute',
-    bottom: -8,
-    right: -12,
-    width: 125,
-    height: 145,
+    bottom: -4,
+    left: -4,
+    width: 160,
+    height: 185,
   },
 
   /* Logo & Header Section */
   logoSection: {
     alignItems: 'center',
-    marginTop: 18,
-    marginBottom: 20,
+    marginTop: 22,
+    marginBottom: 16,
     width: '100%',
   },
   lotusLogo: {
-    width: 68,
-    height: 58,
+    width: 72,
+    height: 62,
     marginBottom: 8,
   },
   brandTitle: {
@@ -452,30 +422,31 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: ShilpColors.textSecondary,
     letterSpacing: 2.2,
-    marginBottom: 20,
+    marginBottom: 18,
     textTransform: 'uppercase',
     fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
   },
   heading: {
-    fontSize: 27,
+    fontSize: 28,
     fontWeight: '700',
     color: ShilpColors.text,
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
     fontFamily: Platform.select({ ios: 'Georgia', android: 'serif', default: 'serif' }),
-    marginBottom: 6,
+    marginBottom: 4,
   },
   lotusDividerContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginVertical: 4,
+    marginVertical: 6,
+    width: '100%',
   },
   lotusDivider: {
-    width: 28,
-    height: 18,
+    width: 180,
+    height: 20,
   },
   subtitle: {
     fontSize: 13.5,
-    lineHeight: 19,
+    lineHeight: 20,
     color: ShilpColors.textSecondary,
     textAlign: 'center',
     marginTop: 6,

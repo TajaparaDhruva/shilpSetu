@@ -594,3 +594,51 @@ export async function getUserProfile(userId, token = null) {
 export const signInWithEmail = loginWithEmail;
 export const signInWithGoogle = loginWithGoogle;
 export const sendPasswordResetEmail = resetPassword;
+
+/**
+ * F. Update User Role via Supabase RPC (set_user_role)
+ * Uses a SECURITY DEFINER function so it bypasses the role-protection trigger.
+ * @param {'customer' | 'artisan'} role
+ * @returns {Promise<{ success: boolean, role: string }>}
+ */
+export async function updateUserRole(role) {
+  assertConfigured();
+
+  if (!role || !['customer', 'artisan'].includes(role)) {
+    throw new Error('Invalid role. Must be "customer" or "artisan".');
+  }
+
+  const accessToken = currentSession?.access_token;
+  if (!accessToken) {
+    throw new Error('Authentication required. Please log in first.');
+  }
+
+  const endpoint = `${SUPABASE_URL}/rest/v1/rpc/set_user_role`;
+
+  let response;
+  try {
+    response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({ new_role: role }),
+    });
+  } catch (networkError) {
+    throw new Error('Network error: Unable to connect to Supabase.');
+  }
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.message || data.hint || data.error || 'Failed to update role.');
+  }
+
+  if (data && data.success === false) {
+    throw new Error(data.error || 'Failed to update role.');
+  }
+
+  return data;
+}

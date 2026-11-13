@@ -1,7 +1,6 @@
-<svg width="400" height="130" viewBox="0 0 400 130" fill="none" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
-  <!-- Terracotta Layer -->
-  <path d="M0 130 L0 90 C70 65, 170 85, 250 60 C320 38, 360 44, 400 35 L400 130 Z" fill="#A85E2B"/>
-
-  <!-- Forest Green Accent Wave in Bottom-Right -->
-  <path d="M140 130 C200 95, 290 82, 400 80 L400 130 Z" fill="#263C29"/>
+<svg width="400" height="180" viewBox="0 0 400 180" fill="none" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Beige/sand organic blob — right side, mid-height -->
+  <path d="M400 180 L240 180 C238 155, 258 130, 290 120 C322 110, 370 118, 400 100 Z" fill="#C8BFA8"/>
+  <!-- Sage green blob — bottom-right corner, larger -->
+  <path d="M400 180 L260 180 C255 160, 272 138, 308 128 C344 118, 382 130, 400 145 Z" fill="#5C7A60"/>
 </svg>

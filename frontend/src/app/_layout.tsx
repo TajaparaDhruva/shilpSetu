@@ -17,6 +17,9 @@ export default function RootLayout() {
         <Stack.Screen name="login" options={{ headerShown: false }} />
         <Stack.Screen name="forgot-password" options={{ headerShown: false }} />
         <Stack.Screen name="sign-up" options={{ headerShown: false }} />
+        <Stack.Screen name="role-setup" options={{ headerShown: false }} />
+        <Stack.Screen name="customer-home" options={{ headerShown: false }} />
+        <Stack.Screen name="artisan-dashboard" options={{ headerShown: false }} />
       </Stack>
     </ThemeProvider>
   );
