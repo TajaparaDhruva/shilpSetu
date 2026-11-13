@@ -31,24 +31,46 @@ function authHeaders(token) {
  * @param {number} quantity - Quantity to add (default 1)
  */
 export async function addToCart(productOrId, quantity = 1) {
-  const productId = typeof productOrId === 'object' ? productOrId.id : productOrId;
+  const productId = typeof productOrId === 'object' ? (productOrId.id || productOrId.product_id) : productOrId;
   const productObj = typeof productOrId === 'object' ? productOrId : { id: productId };
 
   if (!productId) {
-    return { success: false, error: 'Valid product required' };
+    return { success: false, error: 'Product not found' };
+  }
+
+  // Validate positive integer quantity
+  const parsedQty = parseInt(quantity, 10);
+  if (isNaN(parsedQty) || parsedQty <= 0) {
+    return { success: false, error: 'Invalid quantity' };
+  }
+
+  // Validate product active status if present
+  if (productObj.is_active === false) {
+    return { success: false, error: 'Product is currently unavailable' };
   }
 
   const existing = localCart.get(productId);
-  const newQty = (existing ? existing.quantity : 0) + quantity;
+  const currentQty = existing ? existing.quantity : 0;
+  const newQty = currentQty + parsedQty;
 
-  // Local stock validation if stock is present on object
-  if (productObj.stock !== undefined && newQty > productObj.stock) {
-    return {
-      success: false,
-      error: `Only ${productObj.stock} item(s) available in stock`,
-      available_stock: productObj.stock,
-      currentQty: existing ? existing.quantity : 0,
-    };
+  // Local stock bounds validation
+  if (productObj.stock !== undefined) {
+    if (productObj.stock <= 0) {
+      return {
+        success: false,
+        error: 'Product out of stock',
+        available_stock: 0,
+        currentQty,
+      };
+    }
+    if (newQty > productObj.stock) {
+      return {
+        success: false,
+        error: `Insufficient stock: only ${productObj.stock} available`,
+        available_stock: productObj.stock,
+        currentQty,
+      };
+    }
   }
 
   // Update in-memory cache
@@ -63,13 +85,13 @@ export async function addToCart(productOrId, quantity = 1) {
 
   if (user && token && SUPABASE_URL) {
     try {
-      // 1. Try atomic database RPC function first
+      // 1. Try atomic database RPC function first (handles concurrent updates atomically)
       const rpcRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/add_to_cart_item`, {
         method: 'POST',
         headers: authHeaders(token),
         body: JSON.stringify({
           p_product_id: productId,
-          p_quantity: quantity,
+          p_quantity: parsedQty,
         }),
       });
 

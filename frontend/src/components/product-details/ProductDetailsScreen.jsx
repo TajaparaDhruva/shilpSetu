@@ -116,10 +116,8 @@ export default function ProductDetailsScreen({ productId: propProductId }) {
   // View Artisan
   const handleViewArtisan = () => {
     if (!product) return;
-    Alert.alert(
-      product.artisan_name || 'Master Artisan',
-      `Practicing authentic ${product.category_name || 'handicrafts'}.\nArtisan profile page is coming soon!`
-    );
+    const aId = product.artisan_id || 'artisan-ramesh-1';
+    router.push(`/(customer)/artisan/${aId}`);
   };
 
   if (loading) {

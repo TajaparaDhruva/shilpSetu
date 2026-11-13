@@ -61,6 +61,45 @@ export async function getWishlist(userId = null) {
 }
 
 /**
+ * Check whether a product is in the user's wishlist
+ * @param {string} productId
+ */
+export async function checkWishlist(productId) {
+  if (!productId) return false;
+
+  const token = getAccessToken();
+  const user = await getCurrentUser();
+
+  if (!user || !user.id || !SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    return localWishlistCache.has(productId);
+  }
+
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/check_wishlist`, {
+      method: 'POST',
+      headers: authHeaders(token),
+      body: JSON.stringify({ p_product_id: productId }),
+    });
+
+    if (res.ok) {
+      const exists = await res.json();
+      if (typeof exists === 'boolean') {
+        if (exists) localWishlistCache.add(productId);
+        else localWishlistCache.delete(productId);
+        return exists;
+      }
+    }
+  } catch {
+    // Fall back to local cache
+  }
+
+  return localWishlistCache.has(productId);
+}
+
+// Backward compatible alias
+export const isInWishlist = (productId) => localWishlistCache.has(productId);
+
+/**
  * Add a product to the user's wishlist
  * @param {string} productId
  */
@@ -75,11 +114,23 @@ export async function addToWishlist(productId) {
   localWishlistCache.add(productId);
 
   if (!user || !user.id || !SUPABASE_URL || !SUPABASE_ANON_KEY) {
-    return { success: true, localOnly: true, productId };
+    return { success: true, localOnly: true, productId, in_wishlist: true };
   }
 
   try {
-    // Upsert or insert ignoring duplicate
+    // 1. Try secure RPC function first
+    const rpcRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/add_to_wishlist_safe`, {
+      method: 'POST',
+      headers: authHeaders(token),
+      body: JSON.stringify({ p_product_id: productId }),
+    });
+
+    if (rpcRes.ok) {
+      const data = await rpcRes.json();
+      return data;
+    }
+
+    // 2. Direct table upsert fallback
     const res = await fetch(`${SUPABASE_URL}/rest/v1/wishlist`, {
       method: 'POST',
       headers: {
@@ -93,8 +144,7 @@ export async function addToWishlist(productId) {
     });
 
     if (res.ok) {
-      const data = await res.json();
-      return { success: true, data };
+      return { success: true, product_id: productId, in_wishlist: true };
     } else {
       const err = await res.json().catch(() => ({}));
       return { success: false, error: err.message || 'Failed to add to wishlist' };
@@ -119,10 +169,22 @@ export async function removeFromWishlist(productId) {
   localWishlistCache.delete(productId);
 
   if (!user || !user.id || !SUPABASE_URL || !SUPABASE_ANON_KEY) {
-    return { success: true, localOnly: true, productId };
+    return { success: true, localOnly: true, productId, in_wishlist: false };
   }
 
   try {
+    // 1. Try secure RPC function first
+    const rpcRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/remove_from_wishlist_safe`, {
+      method: 'POST',
+      headers: authHeaders(token),
+      body: JSON.stringify({ p_product_id: productId }),
+    });
+
+    if (rpcRes.ok) {
+      return await rpcRes.json();
+    }
+
+    // 2. Direct delete fallback
     const res = await fetch(
       `${SUPABASE_URL}/rest/v1/wishlist?user_id=eq.${user.id}&product_id=eq.${productId}`,
       {
@@ -132,7 +194,7 @@ export async function removeFromWishlist(productId) {
     );
 
     if (res.ok) {
-      return { success: true };
+      return { success: true, product_id: productId, in_wishlist: false };
     } else {
       const err = await res.json().catch(() => ({}));
       return { success: false, error: err.message || 'Failed to remove from wishlist' };
@@ -155,12 +217,4 @@ export async function toggleWishlist(productId) {
     const res = await addToWishlist(productId);
     return { inWishlist: true, ...res };
   }
-}
-
-/**
- * Check if a product is in the current wishlist cache
- * @param {string} productId
- */
-export function isInWishlist(productId) {
-  return localWishlistCache.has(productId);
 }

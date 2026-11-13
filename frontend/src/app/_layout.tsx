@@ -23,6 +23,7 @@ export default function RootLayout() {
         <Stack.Screen name="explore" options={{ headerShown: false }} />
         <Stack.Screen name="(customer)/explore" options={{ headerShown: false }} />
         <Stack.Screen name="(customer)/product/[id]" options={{ headerShown: false }} />
+        <Stack.Screen name="(customer)/artisan/[id]" options={{ headerShown: false }} />
         <Stack.Screen name="artisan-dashboard" options={{ headerShown: false }} />
       </Stack>
     </ThemeProvider>
