@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -17,11 +18,8 @@ import { StatusBar } from 'expo-status-bar';
 import RoleSelectionCard from './RoleSelectionCard';
 import PrimaryButton from './PrimaryButton';
 import { ShilpColors } from '@/constants/shilpSetuTheme';
-import {
-  getCurrentUser,
-  getUserProfile,
-  updateUserRole,
-} from '@/services/auth';
+import { getCurrentUser } from '@/services/auth';
+import { setUserRole, getUserProfile } from '@/services/profileService';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -45,11 +43,11 @@ export default function RoleSetupScreen() {
   const [existingRole, setExistingRole] = useState(null);
   const [initializing, setInitializing] = useState(true);
 
-  // On mount, check if user already has a role set in their profile
+  // On mount, verify authentication and initialize the role selection
   useEffect(() => {
     let mounted = true;
 
-    const checkExistingRole = async () => {
+    const checkAuthAndInit = async () => {
       try {
         const user = await getCurrentUser();
         if (!user) {
@@ -58,21 +56,25 @@ export default function RoleSetupScreen() {
           return;
         }
 
-        const profile = await getUserProfile(user.id);
-        if (profile && profile.role) {
-          if (mounted) {
-            setExistingRole(profile.role);
+        let profile = null;
+        try {
+          profile = await getUserProfile(user.id);
+        } catch {
+          // Profile fetch optional on initial load
+        }
+
+        if (mounted) {
+          if (profile && profile.role) {
             setSelectedRole(profile.role);
           }
+          setInitializing(false);
         }
       } catch {
-        // If profile fetch fails, continue — user can still pick a role
-      } finally {
         if (mounted) setInitializing(false);
       }
     };
 
-    checkExistingRole();
+    checkAuthAndInit();
     return () => { mounted = false; };
   }, []);
 
@@ -86,14 +88,12 @@ export default function RoleSetupScreen() {
     setErrorMessage('');
 
     try {
-      await updateUserRole(selectedRole);
+      await setUserRole(selectedRole);
 
       // Navigate based on role
       if (selectedRole === 'customer') {
-        // Navigate to customer home (placeholder if not yet built)
         router.replace('/customer-home');
       } else if (selectedRole === 'artisan') {
-        // Navigate to artisan dashboard (placeholder if not yet built)
         router.replace('/artisan-dashboard');
       }
     } catch (err) {

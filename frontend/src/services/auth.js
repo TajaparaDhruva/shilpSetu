@@ -15,6 +15,9 @@ const SESSION_STORAGE_KEY = 'shilpsetu_auth_session';
 let currentSession = null;
 let currentUser = null;
 
+export const getAccessToken = () => currentSession?.access_token || null;
+export const getSession = () => currentSession;
+
 // Lightweight in-memory/web storage adapter
 const storage = {
   async getItem(key) {
@@ -214,7 +217,6 @@ export async function signUpWithEmail(email, password, fullName = '') {
       data: {
         full_name: fullName.trim(),
         name: fullName.trim(),
-        role: 'customer',
       },
     }),
   });
@@ -229,9 +231,29 @@ export async function signUpWithEmail(email, password, fullName = '') {
     data.user && !data.session && !data.user.confirmed_at && !data.user.email_confirmed_at
   );
 
+  let activeSession = null;
+  if (data.session) {
+    activeSession = {
+      access_token: data.session.access_token || data.access_token,
+      refresh_token: data.session.refresh_token || data.refresh_token,
+      expires_in: data.session.expires_in || data.expires_in || 3600,
+      expires_at: Math.floor(Date.now() / 1000) + (data.session.expires_in || 3600),
+      user: data.user,
+    };
+    await saveSession(activeSession);
+  } else if (!needsEmailConfirmation) {
+    // Automatically log in to acquire an active session for the role setup page
+    try {
+      const loginRes = await loginWithEmail(trimmedEmail, password);
+      activeSession = loginRes.session;
+    } catch {
+      // ignore
+    }
+  }
+
   return {
     user: data.user,
-    session: data.session,
+    session: activeSession || data.session,
     needsEmailConfirmation,
   };
 }
@@ -613,9 +635,12 @@ export async function updateUserRole(role) {
     throw new Error('Authentication required. Please log in first.');
   }
 
+  const userId = currentUser?.id;
   const endpoint = `${SUPABASE_URL}/rest/v1/rpc/set_user_role`;
 
+  // 1. Try selected_role
   let response;
+  let data;
   try {
     response = await fetch(endpoint, {
       method: 'POST',
@@ -624,16 +649,81 @@ export async function updateUserRole(role) {
         apikey: SUPABASE_ANON_KEY,
         Authorization: `Bearer ${accessToken}`,
       },
-      body: JSON.stringify({ new_role: role }),
+      body: JSON.stringify({ selected_role: role }),
     });
+    data = await response.json();
   } catch (networkError) {
-    throw new Error('Network error: Unable to connect to Supabase.');
+    // proceed
   }
 
-  const data = await response.json();
+  // 2. Fallback to new_role if selected_role was not in schema cache
+  const isSchemaError =
+    !response ||
+    response.status === 404 ||
+    data?.message?.includes('schema cache') ||
+    data?.hint?.includes('selected_role') ||
+    data?.error?.includes('schema cache');
 
-  if (!response.ok) {
-    throw new Error(data.message || data.hint || data.error || 'Failed to update role.');
+  if (isSchemaError) {
+    try {
+      response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ new_role: role }),
+      });
+      data = await response.json();
+    } catch {
+      // ignore
+    }
+  }
+
+  // 3. Fallback: Direct table update
+  const isStillSchemaError =
+    !response ||
+    response.status === 404 ||
+    data?.message?.includes('schema cache') ||
+    data?.error?.includes('schema cache');
+
+  if (isStillSchemaError && userId) {
+    try {
+      const updateRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            apikey: SUPABASE_ANON_KEY,
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({ role, updated_at: new Date().toISOString() }),
+        }
+      );
+
+      if (updateRes.ok) {
+        if (role === 'artisan') {
+          await fetch(`${SUPABASE_URL}/rest/v1/artisan_profiles`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              apikey: SUPABASE_ANON_KEY,
+              Authorization: `Bearer ${accessToken}`,
+            },
+            body: JSON.stringify({ user_id: userId }),
+          }).catch(() => {});
+        }
+        return { success: true, role };
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  if (!response || !response.ok) {
+    throw new Error(data?.message || data?.hint || data?.error || 'Failed to update role.');
   }
 
   if (data && data.success === false) {
@@ -641,4 +731,91 @@ export async function updateUserRole(role) {
   }
 
   return data;
+}
+
+/**
+ * G. Get User Role from profile
+ * Returns the role string ('customer' | 'artisan') or null if not yet chosen.
+ * Separates profile-fetch errors from genuinely null roles.
+ * @returns {Promise<{ role: string | null, profileExists: boolean, error: string | null }>}
+ */
+export async function getUserRole() {
+  try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return { role: null, profileExists: false, error: 'NOT_AUTHENTICATED' };
+    }
+
+    const profile = await getUserProfile(user.id);
+    if (!profile) {
+      return { role: null, profileExists: false, error: null };
+    }
+
+    return { role: profile.role || null, profileExists: true, error: null };
+  } catch (err) {
+    return { role: null, profileExists: false, error: err.message || 'PROFILE_FETCH_FAILED' };
+  }
+}
+
+/**
+ * H. Get Initial Route based on auth state and profile
+ * Determines where the app should navigate on launch or after auth.
+ *
+ * Returns one of:
+ *   '/login'              — no active session
+ *   '/role-setup'         — authenticated but role is NULL
+ *   '/customer-home'      — role is 'customer'
+ *   '/artisan-dashboard'  — role is 'artisan'
+ *
+ * @returns {Promise<string>}
+ */
+export async function getInitialRoute() {
+  try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return '/login';
+    }
+
+    let profile = null;
+    try {
+      profile = await getUserProfile(user.id);
+    } catch {
+      // Profile fetch failed (network error, etc.)
+      // Fall through to role-setup so user isn't stuck
+      return '/role-setup';
+    }
+
+    if (!profile || !profile.role) {
+      return '/role-setup';
+    }
+
+    if (profile.role === 'artisan') {
+      return '/artisan-dashboard';
+    }
+
+    return '/customer-home';
+  } catch {
+    return '/login';
+  }
+}
+
+/**
+ * I. Determine route after authentication result
+ * Takes the auth result (with profile) and returns the target route.
+ * @param {{ profile: object | null }} authResult
+ * @returns {string}
+ */
+export function getPostAuthRoute(authResult) {
+  if (!authResult) return '/login';
+
+  const profile = authResult.profile;
+  if (!profile || !profile.role) {
+    return '/role-setup';
+  }
+
+  if (profile.role === 'artisan') {
+    return '/artisan-dashboard';
+  }
+
+  return '/customer-home';
 }

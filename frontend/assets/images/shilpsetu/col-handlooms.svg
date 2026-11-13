@@ -1,0 +1,21 @@
+<svg width="120" height="120" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Warm background -->
+  <rect width="120" height="120" rx="16" fill="#EDE4D6"/>
+  <!-- Folded rich Indian handloom textile rolls -->
+  <!-- Layer 1: Crimson / maroon brocade silk -->
+  <path d="M15 105 L70 20 L95 32 L40 115 Z" fill="#7E242C"/>
+  <line x1="25" y1="95" x2="75" y2="25" stroke="#E5B262" stroke-width="1.5" stroke-dasharray="3 3"/>
+  <line x1="32" y1="100" x2="82" y2="30" stroke="#E5B262" stroke-width="1.5" stroke-dasharray="3 3"/>
+  <line x1="40" y1="105" x2="90" y2="35" stroke="#E5B262" stroke-width="1.5" stroke-dasharray="3 3"/>
+  
+  <!-- Layer 2: Deep blue / indigo Ikat fabric -->
+  <path d="M30 110 L85 25 L105 38 L50 120 Z" fill="#203852"/>
+  <line x1="40" y1="100" x2="90" y2="30" stroke="#A4C2E0" stroke-width="1.2" stroke-dasharray="2 4"/>
+  <line x1="48" y1="105" x2="98" y2="35" stroke="#A4C2E0" stroke-width="1.2" stroke-dasharray="2 4"/>
+
+  <!-- Layer 3: Terracotta / rust gold zari border textile -->
+  <path d="M45 115 L95 35 L118 48 L65 125 Z" fill="#B35824"/>
+  <line x1="55" y1="105" x2="102" y2="40" stroke="#FDE08A" stroke-width="2.5"/>
+  <line x1="57" y1="109" x2="104" y2="44" stroke="#FDE08A" stroke-width="1.5" stroke-dasharray="2 2"/>
+  <line x1="62" y1="113" x2="109" y2="48" stroke="#FDE08A" stroke-width="2.5"/>
+</svg>

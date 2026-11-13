@@ -22,6 +22,7 @@ import {
   signUpWithEmail,
   loginWithGoogle,
   isSupabaseConfigured,
+  getPostAuthRoute,
 } from '@/services/auth';
 
 const lotusLogo = require('@/assets/images/shilpsetu/lotus-logo.svg');
@@ -56,13 +57,19 @@ export default function SignUpScreen() {
     try {
       const result = await signUpWithEmail(email, password, fullName);
 
-      const alertMsg = result.needsEmailConfirmation
-        ? 'Account created! Please check your email inbox to verify your account before logging in, or disable "Confirm email" in your Supabase Auth dashboard.'
-        : 'Your ShilpSetu account has been created successfully. You can now login!';
-
-      Alert.alert('Registration Successful', alertMsg, [
-        { text: 'Go to Login', onPress: () => router.replace('/login') },
-      ]);
+      if (result.needsEmailConfirmation) {
+        Alert.alert(
+          'Verify Your Email',
+          'Account created! Please check your email inbox to verify your account before logging in.',
+          [{ text: 'Go to Login', onPress: () => router.replace('/login') }]
+        );
+      } else {
+        Alert.alert(
+          'Account Created',
+          'Your account has been created successfully! Welcome to ShilpSetu.',
+          [{ text: 'Continue', onPress: () => router.replace('/role-setup') }]
+        );
+      }
     } catch (err) {
       setErrorMessage(err.message || 'Registration failed.');
     } finally {
@@ -74,8 +81,9 @@ export default function SignUpScreen() {
     setGoogleLoading(true);
     setErrorMessage('');
     try {
-      await loginWithGoogle();
-      router.replace('/role-setup');
+      const result = await loginWithGoogle();
+      const route = getPostAuthRoute(result);
+      router.replace(route);
     } catch (err) {
       if (err.code === 'USER_CANCELLED') {
         return;

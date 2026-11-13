@@ -1,0 +1,9 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Home Decor: Botanical leaves sprig (3 petals / leaves) -->
+  <!-- Center leaf -->
+  <path d="M16 6 C13 12, 13 19, 16 26 C19 19, 19 12, 16 6 Z" stroke="#263C29" stroke-width="1.6" fill="none" stroke-linejoin="round"/>
+  <!-- Left leaf -->
+  <path d="M16 26 C11 25, 7 19, 8 13 C12 15, 15 20, 16 26 Z" stroke="#263C29" stroke-width="1.6" fill="none" stroke-linejoin="round"/>
+  <!-- Right leaf -->
+  <path d="M16 26 C21 25, 25 19, 24 13 C20 15, 17 20, 16 26 Z" stroke="#263C29" stroke-width="1.6" fill="none" stroke-linejoin="round"/>
+</svg>

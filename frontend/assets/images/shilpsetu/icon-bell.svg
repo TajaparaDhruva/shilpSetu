@@ -1,0 +1,7 @@
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Notification Bell -->
+  <path d="M18 16V11C18 7.69 15.31 5 12 5C8.69 5 6 7.69 6 11V16L4 18V19H20V18L18 16Z" stroke="#25251F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M10 19C10 20.1 10.9 21 12 21C13.1 21 14 20.1 14 19" stroke="#25251F" stroke-width="2" stroke-linecap="round"/>
+  <!-- Notification orange badge dot top-right -->
+  <circle cx="18" cy="6" r="3.5" fill="#A85E2B"/>
+</svg>

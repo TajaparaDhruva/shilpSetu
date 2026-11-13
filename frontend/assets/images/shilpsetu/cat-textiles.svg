@@ -1,0 +1,13 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Textiles: Traditional Handloom woven fabric with fringes -->
+  <rect x="8" y="8" width="16" height="15" rx="1.5" stroke="#263C29" stroke-width="1.6" fill="none"/>
+  <!-- Woven threads pattern -->
+  <line x1="8" y1="12" x2="24" y2="12" stroke="#263C29" stroke-width="1.2"/>
+  <line x1="8" y1="16" x2="24" y2="16" stroke="#263C29" stroke-width="1.2"/>
+  <line x1="8" y1="20" x2="24" y2="20" stroke="#263C29" stroke-width="1.2"/>
+  <line x1="13" y1="8" x2="13" y2="23" stroke="#263C29" stroke-width="1.2"/>
+  <line x1="19" y1="8" x2="19" y2="23" stroke="#263C29" stroke-width="1.2"/>
+  <!-- Top and bottom loom rods -->
+  <line x1="6" y1="6" x2="26" y2="6" stroke="#263C29" stroke-width="1.6" stroke-linecap="round"/>
+  <line x1="6" y1="25" x2="26" y2="25" stroke="#263C29" stroke-width="1.6" stroke-linecap="round"/>
+</svg>

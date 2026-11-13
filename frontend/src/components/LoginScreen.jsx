@@ -23,6 +23,7 @@ import {
   loginWithEmail,
   loginWithGoogle,
   isSupabaseConfigured,
+  getPostAuthRoute,
 } from '@/services/auth';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -107,8 +108,9 @@ export default function LoginScreen({ onLoginSuccess }) {
       if (onLoginSuccess) {
         onLoginSuccess(data);
       } else {
-        // Always go to role-setup so the user can confirm or choose their role
-        router.replace('/role-setup');
+        // Route based on profile role: existing role → home, no role → role-setup
+        const route = getPostAuthRoute(data);
+        router.replace(route);
       }
     } catch (err) {
       const message = err.message || 'Login failed. Please verify your credentials.';
@@ -127,7 +129,8 @@ export default function LoginScreen({ onLoginSuccess }) {
       if (onLoginSuccess) {
         onLoginSuccess(result);
       } else {
-        router.replace('/role-setup');
+        const route = getPostAuthRoute(result);
+        router.replace(route);
       }
     } catch (err) {
       if (err.code === 'USER_CANCELLED') {
