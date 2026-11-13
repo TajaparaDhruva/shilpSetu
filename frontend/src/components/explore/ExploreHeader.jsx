@@ -64,7 +64,7 @@ export default function ExploreHeader({
 
         <TouchableOpacity
           style={styles.iconButton}
-          onPress={onCartPress}
+          onPress={onCartPress || (() => router.push('/(customer)/cart'))}
           accessibilityRole="button"
           accessibilityLabel="Shopping cart"
         >

@@ -296,9 +296,7 @@ export default function ExploreScreen() {
       {/* Top Header */}
       <ExploreHeader
         cartCount={cartCount}
-        onCartPress={() =>
-          Alert.alert('Shopping Cart', `You have ${cartCount} item(s) in your bag.`)
-        }
+        onCartPress={() => router.push('/(customer)/cart')}
         onNotificationPress={() =>
           Alert.alert('Notifications', 'No new notifications.')
         }

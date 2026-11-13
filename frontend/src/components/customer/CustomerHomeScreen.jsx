@@ -32,6 +32,7 @@ import {
   toggleWishlist as toggleUserWishlist,
   isInWishlist,
 } from '@/services/wishlistService';
+import { getCartCount } from '@/services/cartService';
 import { logout } from '@/services/auth';
 
 export default function CustomerHomeScreen() {
@@ -44,6 +45,7 @@ export default function CustomerHomeScreen() {
   const [products, setProducts] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [wishlistIds, setWishlistIds] = useState(new Set());
+  const [cartCount, setCartCount] = useState(getCartCount());
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState('home');
@@ -184,6 +186,7 @@ export default function CustomerHomeScreen() {
 
       {/* 1. Top Navigation Header */}
       <HomeHeader
+        cartCount={cartCount}
         onMenuPress={() =>
           Alert.alert(
             'ShilpSetu Menu',
@@ -194,9 +197,7 @@ export default function CustomerHomeScreen() {
         onNotificationPress={() =>
           Alert.alert('Notifications', '🎉 Welcome to ShilpSetu! Discover authentic handicrafts direct from rural Indian artisans.')
         }
-        onCartPress={() =>
-          Alert.alert('Shopping Cart', 'Your shopping cart has 2 item(s).\n\nProceed to checkout coming soon!')
-        }
+        onCartPress={() => router.push('/(customer)/cart')}
       />
 
       {/* 2. Search Bar */}

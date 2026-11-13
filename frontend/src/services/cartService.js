@@ -6,12 +6,36 @@
  */
 
 import { getCurrentUser, getAccessToken } from './auth.js';
+import { FALLBACK_PRODUCTS } from './productService.js';
 
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
+// Default initial cart items matching screenshots (Terracotta Pot Set + Traditional Jhumkas)
+export const DEFAULT_CART_ITEMS = [
+  {
+    id: 'cart-item-1',
+    product_id: 'prod-pot-1',
+    product: FALLBACK_PRODUCTS[0], // Terracotta Pot Set (₹799)
+    quantity: 1,
+    addedAt: new Date().toISOString(),
+  },
+  {
+    id: 'cart-item-2',
+    product_id: 'prod-jewel-1',
+    product: FALLBACK_PRODUCTS[2], // Traditional Jhumkas (₹599)
+    quantity: 1,
+    addedAt: new Date().toISOString(),
+  },
+];
+
 // In-memory cart storage for session resilience & instant UI feedback
 const localCart = new Map();
+
+// Initialize localCart with default items
+DEFAULT_CART_ITEMS.forEach((item) => {
+  localCart.set(item.product_id, item);
+});
 
 function authHeaders(token) {
   const headers = {
@@ -160,7 +184,7 @@ export async function getCart() {
       );
       if (res.ok) {
         const data = await res.json();
-        if (Array.isArray(data)) {
+        if (Array.isArray(data) && data.length > 0) {
           localCart.clear();
           data.forEach((item) => {
             localCart.set(item.product_id, {

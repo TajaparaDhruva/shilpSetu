@@ -23,7 +23,17 @@ import ArtisanReviewsTab from './ArtisanReviewsTab';
 import ArtisanActionButtons from './ArtisanActionButtons';
 import CustomerBottomNavigation from '@/components/customer/CustomerBottomNavigation';
 
-import { getProductArtisan, searchProducts } from '@/services/productService';
+import {
+  getArtisanProfile,
+  getArtisanStatistics,
+  getFeaturedArtisanProducts,
+  getArtisanReviews,
+} from '@/services/artisanService';
+import {
+  isFollowingArtisan,
+  followArtisan,
+  unfollowArtisan,
+} from '@/services/artisanFollowService';
 import {
   getWishlist,
   toggleWishlist as toggleUserWishlist,
@@ -37,11 +47,18 @@ export default function ArtisanProfileScreen({ artisanId: propArtisanId }) {
 
   // State
   const [artisan, setArtisan] = useState(null);
+  const [statistics, setStatistics] = useState({
+    productsCount: 0,
+    customersCount: '0',
+    experienceYears: '1 Year',
+  });
   const [products, setProducts] = useState([]);
+  const [reviews, setReviews] = useState([]);
   const [activeTab, setActiveTab] = useState('about');
   const [isFollowing, setIsFollowing] = useState(false);
+  const [followLoading, setFollowLoading] = useState(false);
   const [wishlistIds, setWishlistIds] = useState(new Set());
-  const [cartCount, setCartCount] = useState(getCartCount());
+  const [cartCount, setCartCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
@@ -50,41 +67,59 @@ export default function ArtisanProfileScreen({ artisanId: propArtisanId }) {
   const loadArtisanData = useCallback(async () => {
     try {
       setError(null);
-      const [artisanData, artisanProducts, userWishlist] = await Promise.all([
-        getProductArtisan(artisanId),
-        searchProducts(null, { inStockOnly: true }),
+
+      // Parallel fetch: profile + statistics + products + reviews + wishlist + follow state
+      const [
+        artisanData,
+        statsData,
+        featuredProducts,
+        artisanReviews,
+        userWishlist,
+        followingStatus,
+        cartItemCount,
+      ] = await Promise.all([
+        getArtisanProfile(artisanId),
+        getArtisanStatistics(artisanId),
+        getFeaturedArtisanProducts(artisanId, 6),
+        getArtisanReviews(artisanId, 1, 10),
         getWishlist(),
+        isFollowingArtisan(artisanId),
+        Promise.resolve(getCartCount()),
       ]);
 
       if (artisanData) {
         setArtisan({
           ...artisanData,
           rating: artisanData.rating || 4.8,
-          reviews_count: artisanData.reviews_count || 126,
+          reviews_count: artisanData.reviews_count || 0,
           is_verified: artisanData.is_verified !== undefined ? artisanData.is_verified : true,
-          productsCount: artisanData.productsCount || 42,
-          customersCount: artisanData.customersCount || '1,250+',
-          experienceYears: artisanData.experienceYears || '5 Years',
-          specialties: artisanData.specialties || ['Terracotta', 'Eco-Friendly', 'Handmade'],
-          storyVideoUrl: artisanData.storyVideoUrl || 'https://www.youtube.com',
+          specialties: artisanData.specialties || artisanData.craft_specialties || ['Handmade'],
+          storyVideoUrl: artisanData.storyVideoUrl || artisanData.story_video_url || null,
+          public_description:
+            artisanData.public_description ||
+            artisanData.biography ||
+            artisanData.description ||
+            '',
         });
       } else {
         setError('Artisan profile not found.');
       }
 
-      // Filter products belonging to this artisan
-      const filtered = artisanProducts.filter(
-        (p) =>
-          p.artisan_id === artisanId ||
-          p.artisan_name?.toLowerCase().includes('ramesh') ||
-          p.category_name?.toLowerCase().includes('pot')
-      );
-      setProducts(filtered.length > 0 ? filtered : artisanProducts.slice(0, 4));
+      setStatistics({
+        productsCount: statsData?.productsCount ?? 0,
+        customersCount: statsData?.customersCount ?? '0',
+        experienceYears: statsData?.experienceYears ?? '1 Year',
+      });
+
+      setProducts(Array.isArray(featuredProducts) ? featuredProducts : []);
+      setReviews(Array.isArray(artisanReviews) ? artisanReviews : []);
+      setIsFollowing(Boolean(followingStatus));
+      setCartCount(Number(cartItemCount) || 0);
 
       if (Array.isArray(userWishlist)) {
         const idSet = new Set();
         userWishlist.forEach((item) => {
-          if (item.product_id) idSet.add(item.product_id);
+          if (item?.product_id) idSet.add(item.product_id);
           else if (typeof item === 'string') idSet.add(item);
         });
         setWishlistIds(idSet);
@@ -106,16 +141,36 @@ export default function ArtisanProfileScreen({ artisanId: propArtisanId }) {
     loadArtisanData();
   }, [loadArtisanData]);
 
-  // Follow Toggle
-  const handleFollowToggle = () => {
-    const next = !isFollowing;
-    setIsFollowing(next);
-    Alert.alert(
-      next ? 'Following' : 'Unfollowed',
-      next
-        ? `You are now following ${artisan?.name || 'this artisan'}. You will receive updates on new handcrafted items.`
-        : `Unfollowed ${artisan?.name || 'this artisan'}.`
-    );
+  // Follow Toggle — calls real service
+  const handleFollowToggle = async () => {
+    if (followLoading) return;
+    setFollowLoading(true);
+    const wasFollowing = isFollowing;
+    // Optimistic update
+    setIsFollowing(!wasFollowing);
+    try {
+      const result = wasFollowing
+        ? await unfollowArtisan(artisanId)
+        : await followArtisan(artisanId);
+
+      if (result?.success === false) {
+        // Revert if failed
+        setIsFollowing(wasFollowing);
+        Alert.alert('Error', result.error || 'Could not update follow status.');
+      } else {
+        const name = artisan?.name || artisan?.business_name || 'this artisan';
+        Alert.alert(
+          !wasFollowing ? 'Following' : 'Unfollowed',
+          !wasFollowing
+            ? `You are now following ${name}. You will receive updates on new handcrafted items.`
+            : `Unfollowed ${name}.`
+        );
+      }
+    } catch {
+      setIsFollowing(wasFollowing);
+    } finally {
+      setFollowLoading(false);
+    }
   };
 
   // Product Tap
@@ -130,7 +185,7 @@ export default function ArtisanProfileScreen({ artisanId: propArtisanId }) {
     const res = await toggleUserWishlist(product.id);
     setWishlistIds((prev) => {
       const next = new Set(prev);
-      if (res.inWishlist) next.add(product.id);
+      if (res?.inWishlist) next.add(product.id);
       else next.delete(product.id);
       return next;
     });
@@ -140,7 +195,7 @@ export default function ArtisanProfileScreen({ artisanId: propArtisanId }) {
   const handleChatPress = () => {
     Alert.alert(
       'Artisan Direct Chat',
-      `Direct messaging with ${artisan?.name || 'this artisan'} will open here.`
+      `Direct messaging with ${artisan?.name || artisan?.business_name || 'this artisan'} will open here.`
     );
   };
 
@@ -148,11 +203,11 @@ export default function ArtisanProfileScreen({ artisanId: propArtisanId }) {
   const handleViewAllProducts = () => {
     router.push({
       pathname: '/(customer)/explore',
-      params: { query: artisan?.name || '' },
+      params: { query: artisan?.name || artisan?.business_name || '' },
     });
   };
 
-  // Bottom navigation tab click
+  // Bottom navigation
   const handleTabPress = (tabKey) => {
     if (tabKey === 'home') {
       router.replace('/(customer)/home');
@@ -200,9 +255,7 @@ export default function ArtisanProfileScreen({ artisanId: propArtisanId }) {
       {/* A. Header */}
       <ExploreHeader
         cartCount={cartCount}
-        onCartPress={() =>
-          Alert.alert('Shopping Cart', `You have ${cartCount} item(s) in your bag.`)
-        }
+        onCartPress={() => router.push('/(customer)/cart')}
         onNotificationPress={() =>
           Alert.alert('Notifications', 'No new notifications.')
         }
@@ -225,14 +278,15 @@ export default function ArtisanProfileScreen({ artisanId: propArtisanId }) {
         <ArtisanProfileHeader
           artisan={artisan}
           isFollowing={isFollowing}
+          followLoading={followLoading}
           onFollowToggle={handleFollowToggle}
         />
 
         {/* C. Artisan Statistics */}
         <ArtisanStatistics
-          productsCount={artisan.productsCount}
-          customersCount={artisan.customersCount}
-          experienceYears={artisan.experienceYears}
+          productsCount={statistics.productsCount}
+          customersCount={statistics.customersCount}
+          experienceYears={statistics.experienceYears}
         />
 
         {/* D. Profile Tabs (About, Products, Reviews) */}
@@ -246,7 +300,7 @@ export default function ArtisanProfileScreen({ artisanId: propArtisanId }) {
           <ArtisanAboutTab
             story={artisan.public_description}
             specialties={artisan.specialties}
-            location={artisan.location}
+            location={artisan.location || `${artisan.city || ''}, ${artisan.state || ''}`.trim().replace(/^,\s*|,\s*$/, '')}
             storyVideoUrl={artisan.storyVideoUrl}
           />
         )}
@@ -265,24 +319,11 @@ export default function ArtisanProfileScreen({ artisanId: propArtisanId }) {
           <ArtisanReviewsTab
             rating={artisan.rating}
             reviewsCount={artisan.reviews_count}
-            reviews={[
-              {
-                id: 'r1',
-                reviewer_name: 'Ananya Sharma',
-                rating: 5.0,
-                comment: 'The terracotta finish is pristine! Truly authentic craftsmanship and packaged safely.',
-              },
-              {
-                id: 'r2',
-                reviewer_name: 'Vikram Joshi',
-                rating: 4.8,
-                comment: 'Beautiful traditional clay work. Adds warmth and cultural elegance to our living space.',
-              },
-            ]}
+            reviews={reviews}
           />
         )}
 
-        {/* F. Featured Products (visible under About tab matching reference design) */}
+        {/* F. Featured Products section visible under About tab */}
         {activeTab === 'about' && (
           <ArtisanProductsTab
             products={products}
@@ -293,7 +334,7 @@ export default function ArtisanProfileScreen({ artisanId: propArtisanId }) {
           />
         )}
 
-        {/* G. Bottom Action Buttons: Chat with Artisan & View Products */}
+        {/* G. Bottom Action Buttons */}
         <ArtisanActionButtons
           onChatPress={handleChatPress}
           onViewProductsPress={handleViewAllProducts}
@@ -302,7 +343,7 @@ export default function ArtisanProfileScreen({ artisanId: propArtisanId }) {
         <View style={styles.bottomSpacer} />
       </ScrollView>
 
-      {/* H. Customer Bottom Navigation with Profile tab highlighted */}
+      {/* H. Customer Bottom Navigation */}
       <CustomerBottomNavigation
         activeTab="profile"
         onTabPress={handleTabPress}
@@ -320,7 +361,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 85, // Avoid overlapping with bottom navigation
+    paddingBottom: 85,
   },
   bottomSpacer: {
     height: 10,
@@ -349,4 +390,3 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 });
-
