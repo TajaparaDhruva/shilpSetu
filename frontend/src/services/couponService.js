@@ -1,9 +1,11 @@
 /**
- * couponService.js — Coupon Validation & Application for ShilpSetu
+ * couponService.js — Backend Coupon Validation & Application for ShilpSetu
  *
- * Validates coupons against the Supabase `coupons` table with in-memory
- * cache for the currently applied coupon.
- * Supports offline demo coupons: DEMO10, FLAT50
+ * Implements:
+ * - validateCoupon(code, cartItems)
+ * - applyCoupon(code, cartTotal)
+ * - removeCoupon()
+ * - getAppliedCoupon()
  */
 
 import { getAccessToken } from './auth.js';
@@ -11,32 +13,42 @@ import { getAccessToken } from './auth.js';
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
-// ─── In-memory state ──────────────────────────────────────────────────────────
-
 let _appliedCoupon = null;
 
-// ─── Fallback / Demo coupons ──────────────────────────────────────────────────
-
 export const FALLBACK_COUPONS = {
+  WELCOME10: {
+    code: 'WELCOME10',
+    discount_type: 'percent',
+    discount_value: 10,
+    minimum_order_amount: 200,
+    maximum_discount: 100,
+    is_active: true,
+  },
   DEMO10: {
     code: 'DEMO10',
     discount_type: 'percent',
     discount_value: 10,
-    min_order_amount: 0,
-    max_discount_amount: 100,
+    minimum_order_amount: 100,
+    maximum_discount: 100,
     is_active: true,
   },
   FLAT50: {
     code: 'FLAT50',
     discount_type: 'flat',
     discount_value: 50,
-    min_order_amount: 200,
-    max_discount_amount: null,
+    minimum_order_amount: 200,
+    maximum_discount: 50,
+    is_active: true,
+  },
+  SHILP200: {
+    code: 'SHILP200',
+    discount_type: 'flat',
+    discount_value: 200,
+    minimum_order_amount: 1000,
+    maximum_discount: 200,
     is_active: true,
   },
 };
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function authHeaders(token) {
   const headers = {
@@ -48,134 +60,101 @@ function authHeaders(token) {
   return headers;
 }
 
-function computeDiscount(coupon, cartTotal) {
-  if (coupon.discount_type === 'flat') {
-    const discount = Number(coupon.discount_value);
-    return Math.min(discount, cartTotal);
-  }
-  if (coupon.discount_type === 'percent') {
-    const percent = Number(coupon.discount_value);
-    const raw = (cartTotal * percent) / 100;
-    return coupon.max_discount_amount
-      ? Math.min(raw, Number(coupon.max_discount_amount))
-      : raw;
-  }
-  return 0;
-}
-
-// ─── Service Functions ────────────────────────────────────────────────────────
-
 /**
- * Validate a coupon code against the database or fallback list
- * @param {string} code
- * @param {number} cartTotal - Current cart subtotal in ₹
- * @returns {Promise<{ valid: boolean, discount_type?: string, discount_value?: number, discount_amount?: number, coupon?: Object, error?: string }>}
+ * 1. validateCoupon(code, cartItemsOrTotal)
  */
-export async function validateCoupon(code, cartTotal) {
+export async function validateCoupon(code, cartItemsOrTotal = 0) {
   if (!code || typeof code !== 'string') {
-    return { valid: false, error: 'Please enter a coupon code' };
+    return { valid: false, error: 'Coupon code is required' };
   }
 
-  const normalizedCode = code.trim().toUpperCase();
-  const total = Number(cartTotal) || 0;
+  const cleanCode = code.trim().toUpperCase();
+
+  // Compute total if array passed
+  let cartTotal = 0;
+  if (Array.isArray(cartItemsOrTotal)) {
+    for (const item of cartItemsOrTotal) {
+      const price = Number(item.product?.price || item.price || 0);
+      const qty = Number(item.quantity || 1);
+      cartTotal += price * qty;
+    }
+  } else {
+    cartTotal = Number(cartItemsOrTotal) || 0;
+  }
 
   const token = getAccessToken();
 
-  // ── Try DB first ──────────────────────────────────────────────────────────
   if (SUPABASE_URL && SUPABASE_ANON_KEY) {
     try {
-      const res = await fetch(
-        `${SUPABASE_URL}/rest/v1/coupons?code=eq.${encodeURIComponent(normalizedCode)}&limit=1`,
-        { headers: authHeaders(token) }
-      );
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/validate_coupon`, {
+        method: 'POST',
+        headers: authHeaders(token),
+        body: JSON.stringify({
+          p_code: cleanCode,
+          p_cart_total: cartTotal,
+        }),
+      });
 
       if (res.ok) {
-        const rows = await res.json();
-        if (Array.isArray(rows) && rows.length > 0) {
-          const coupon = rows[0];
-
-          if (!coupon.is_active) {
-            return { valid: false, error: 'This coupon is no longer active' };
-          }
-
-          if (coupon.expiry_date && new Date(coupon.expiry_date) < new Date()) {
-            return { valid: false, error: 'This coupon has expired' };
-          }
-
-          if (coupon.min_order_amount && total < Number(coupon.min_order_amount)) {
-            return {
-              valid: false,
-              error: `Minimum order amount ₹${coupon.min_order_amount} required for this coupon`,
-            };
-          }
-
-          const discount_amount = computeDiscount(coupon, total);
+        const data = await res.json();
+        if (data && typeof data === 'object') {
           return {
-            valid: true,
-            discount_type: coupon.discount_type,
-            discount_value: Number(coupon.discount_value),
-            discount_amount: Math.round(discount_amount * 100) / 100,
-            coupon,
+            valid: Boolean(data.valid),
+            coupon_code: cleanCode,
+            discount_type: data.discount_type || 'flat',
+            discount_amount: Number(data.discount_amount || 0),
+            error: data.error,
           };
         }
-
-        // Code not found in DB — fall through to demo coupons
       }
-    } catch {
-      // Network error — fall through to demo coupons
-    }
+    } catch {}
   }
 
-  // ── Offline / demo fallback ───────────────────────────────────────────────
-  const demo = FALLBACK_COUPONS[normalizedCode];
-  if (demo) {
-    if (demo.min_order_amount && total < demo.min_order_amount) {
-      return {
-        valid: false,
-        error: `Minimum order amount ₹${demo.min_order_amount} required for this coupon`,
-      };
-    }
-    const discount_amount = computeDiscount(demo, total);
+  // Fallback offline validation
+  const coupon = FALLBACK_COUPONS[cleanCode];
+  if (!coupon || !coupon.is_active) {
+    return { valid: false, error: 'Invalid or expired coupon code' };
+  }
+
+  if (cartTotal > 0 && cartTotal < coupon.minimum_order_amount) {
     return {
-      valid: true,
-      discount_type: demo.discount_type,
-      discount_value: demo.discount_value,
-      discount_amount: Math.round(discount_amount * 100) / 100,
-      coupon: demo,
+      valid: false,
+      error: `Minimum order of ₹${coupon.minimum_order_amount} required for this coupon`,
     };
   }
 
-  return { valid: false, error: 'Invalid or unrecognised coupon code' };
-}
-
-/**
- * Apply a coupon: validates then stores it in memory
- * @param {string} code
- * @param {number} cartTotal
- * @returns {Promise<{ success: boolean, couponState?: Object, error?: string }>}
- */
-export async function applyCoupon(code, cartTotal) {
-  const result = await validateCoupon(code, cartTotal);
-
-  if (!result.valid) {
-    return { success: false, error: result.error };
+  let discount = 0;
+  if (coupon.discount_type === 'percent' || coupon.discount_type === 'percentage') {
+    discount = (cartTotal * coupon.discount_value) / 100;
+    if (coupon.maximum_discount && discount > coupon.maximum_discount) {
+      discount = coupon.maximum_discount;
+    }
+  } else {
+    discount = Math.min(coupon.discount_value, cartTotal || coupon.discount_value);
   }
 
-  _appliedCoupon = {
-    code: (result.coupon?.code || code).toUpperCase(),
-    discount_type: result.discount_type,
-    discount_value: result.discount_value,
-    discount_amount: result.discount_amount,
-    coupon: result.coupon,
-    appliedAt: new Date().toISOString(),
+  return {
+    valid: true,
+    coupon_code: cleanCode,
+    discount_type: coupon.discount_type,
+    discount_value: coupon.discount_value,
+    discount_amount: Math.round(discount),
   };
-
-  return { success: true, couponState: _appliedCoupon };
 }
 
 /**
- * Remove any currently applied coupon from in-memory state
- * @returns {{ success: boolean }}
+ * 2. applyCoupon(code, cartTotal)
+ */
+export async function applyCoupon(code, cartTotal = 0) {
+  const result = await validateCoupon(code, cartTotal);
+  if (result.valid) {
+    _appliedCoupon = result;
+  }
+  return result;
+}
+
+/**
+ * 3. removeCoupon()
  */
 export function removeCoupon() {
   _appliedCoupon = null;
@@ -183,8 +162,7 @@ export function removeCoupon() {
 }
 
 /**
- * Get the currently applied coupon (in-memory)
- * @returns {Object|null}
+ * 4. getAppliedCoupon()
  */
 export function getAppliedCoupon() {
   return _appliedCoupon;

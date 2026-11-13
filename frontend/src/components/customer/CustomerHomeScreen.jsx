@@ -174,7 +174,7 @@ export default function CustomerHomeScreen() {
     } else if (tabKey === 'explore' || tabKey === 'categories') {
       router.push('/(customer)/explore');
     } else if (tabKey === 'orders') {
-      Alert.alert('My Orders', 'You have no past orders yet.');
+      router.push('/(customer)/orders');
     } else if (tabKey === 'wishlist') {
       Alert.alert('My Wishlist', `${wishlistIds.size} item(s) saved in your wishlist.`);
     }

@@ -246,7 +246,7 @@ export default function ExploreScreen() {
     } else if (tabKey === 'wishlist') {
       Alert.alert('Wishlist', `You have ${wishlistIds.size} saved items.`);
     } else if (tabKey === 'orders') {
-      Alert.alert('My Orders', 'Your orders list is coming soon.');
+      router.push('/(customer)/orders');
     } else if (tabKey === 'profile') {
       Alert.alert('Customer Profile', 'Profile options coming soon.');
     }
