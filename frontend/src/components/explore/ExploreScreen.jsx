@@ -52,20 +52,23 @@ export default function ExploreScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Load wishlist & initial products
+  // Load wishlist & products with backend search, filter, and sort
   const loadInitialData = useCallback(async () => {
     try {
       setLoading(true);
 
-      // Load products based on query or category
-      let prods = [];
-      if (searchQuery.trim()) {
-        prods = await searchProducts(searchQuery);
-      } else if (selectedCategory && selectedCategory !== 'all') {
-        prods = await getProductsByCategory(selectedCategory);
-      } else {
-        prods = await getCuratedProducts({ limit: 40 });
-      }
+      const activeFilters = {
+        ...filters,
+        category: selectedCategory && selectedCategory !== 'all' ? selectedCategory : filters.category,
+      };
+
+      const prods = await searchProducts(
+        searchQuery,
+        activeFilters,
+        selectedSort,
+        1,
+        30
+      );
 
       setAllFetchedProducts(prods);
 
@@ -85,7 +88,7 @@ export default function ExploreScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [searchQuery, selectedCategory]);
+  }, [searchQuery, selectedCategory, filters, selectedSort]);
 
   useEffect(() => {
     loadInitialData();
@@ -151,14 +154,9 @@ export default function ExploreScreen() {
 
   // Product press: Navigate to product details
   const handleProductPress = (product) => {
-    Alert.alert(
-      product.name,
-      `Crafted by: ${product.artisan_name}\nPrice: ₹${product.price}\nRating: ${product.rating} ★\nStock: ${product.stock || 'In Stock'}`,
-      [
-        { text: 'Add to Cart', onPress: () => handleAddToCart(product) },
-        { text: 'Close', style: 'cancel' },
-      ]
-    );
+    if (product && product.id) {
+      router.push(`/(customer)/product/${product.id}`);
+    }
   };
 
   // Count active filters

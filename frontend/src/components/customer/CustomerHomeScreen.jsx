@@ -130,11 +130,9 @@ export default function CustomerHomeScreen() {
 
   // Product tap
   const handleProductPress = (product) => {
-    Alert.alert(
-      product.name,
-      `Crafted by: ${product.artisan_name}\nPrice: ₹${product.price}\nRating: ${product.rating} ★\n\nFull product details view is coming soon!`,
-      [{ text: 'Close', style: 'cancel' }]
-    );
+    if (product && product.id) {
+      router.push(`/(customer)/product/${product.id}`);
+    }
   };
 
   // Artisan profile tap
