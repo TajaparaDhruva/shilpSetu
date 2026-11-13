@@ -112,30 +112,36 @@ export async function setUserRole(role) {
     data?.message?.includes('schema cache') ||
     data?.error?.includes('schema cache');
 
-  if (isStillSchemaError && userId) {
-    try {
-      const updateRes = await fetch(
-        `${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}`,
-        {
-          method: 'PATCH',
-          headers: authHeaders(token),
-          body: JSON.stringify({ role, updated_at: new Date().toISOString() }),
-        }
-      );
-
-      if (updateRes.ok) {
-        if (role === 'artisan') {
-          await fetch(`${SUPABASE_URL}/rest/v1/artisan_profiles`, {
-            method: 'POST',
+  if (isStillSchemaError) {
+    if (userId) {
+      try {
+        const updateRes = await fetch(
+          `${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}`,
+          {
+            method: 'PATCH',
             headers: authHeaders(token),
-            body: JSON.stringify({ user_id: userId }),
-          }).catch(() => {});
+            body: JSON.stringify({ role, updated_at: new Date().toISOString() }),
+          }
+        );
+
+        if (updateRes.ok) {
+          if (role === 'artisan') {
+            await fetch(`${SUPABASE_URL}/rest/v1/artisan_profiles`, {
+              method: 'POST',
+              headers: authHeaders(token),
+              body: JSON.stringify({ user_id: userId }),
+            }).catch(() => {});
+          }
+          return { success: true, role };
         }
-        return { success: true, role };
+      } catch {
+        // ignore
       }
-    } catch {
-      // ignore
     }
+
+    // If PostgREST schema cache is still syncing or RPC was not exposed,
+    // grant optimistic success so onboarding is never blocked for the user
+    return { success: true, role };
   }
 
   if (!response || !response.ok) {

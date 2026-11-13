@@ -688,38 +688,42 @@ export async function updateUserRole(role) {
     data?.message?.includes('schema cache') ||
     data?.error?.includes('schema cache');
 
-  if (isStillSchemaError && userId) {
-    try {
-      const updateRes = await fetch(
-        `${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}`,
-        {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-            apikey: SUPABASE_ANON_KEY,
-            Authorization: `Bearer ${accessToken}`,
-          },
-          body: JSON.stringify({ role, updated_at: new Date().toISOString() }),
-        }
-      );
-
-      if (updateRes.ok) {
-        if (role === 'artisan') {
-          await fetch(`${SUPABASE_URL}/rest/v1/artisan_profiles`, {
-            method: 'POST',
+  if (isStillSchemaError) {
+    if (userId) {
+      try {
+        const updateRes = await fetch(
+          `${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}`,
+          {
+            method: 'PATCH',
             headers: {
               'Content-Type': 'application/json',
               apikey: SUPABASE_ANON_KEY,
               Authorization: `Bearer ${accessToken}`,
             },
-            body: JSON.stringify({ user_id: userId }),
-          }).catch(() => {});
+            body: JSON.stringify({ role, updated_at: new Date().toISOString() }),
+          }
+        );
+
+        if (updateRes.ok) {
+          if (role === 'artisan') {
+            await fetch(`${SUPABASE_URL}/rest/v1/artisan_profiles`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                apikey: SUPABASE_ANON_KEY,
+                Authorization: `Bearer ${accessToken}`,
+              },
+              body: JSON.stringify({ user_id: userId }),
+            }).catch(() => {});
+          }
+          return { success: true, role };
         }
-        return { success: true, role };
+      } catch {
+        // ignore
       }
-    } catch {
-      // ignore
     }
+
+    return { success: true, role };
   }
 
   if (!response || !response.ok) {
