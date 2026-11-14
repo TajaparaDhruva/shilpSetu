@@ -1,6 +1,7 @@
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
 import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Complete any pending auth session in web browser
 WebBrowser.maybeCompleteAuthSession();
@@ -18,34 +19,45 @@ let currentUser = null;
 export const getAccessToken = () => currentSession?.access_token || null;
 export const getSession = () => currentSession;
 
-// Lightweight in-memory/web storage adapter
+// Persistent storage adapter using React Native AsyncStorage
 const storage = {
   async getItem(key) {
     try {
+      if (AsyncStorage) {
+        return await AsyncStorage.getItem(key);
+      }
       if (typeof window !== 'undefined' && window.localStorage) {
         return window.localStorage.getItem(key);
       }
     } catch {
-      // Ignore web storage errors
+      // Ignore storage errors
     }
     return null;
   },
   async setItem(key, value) {
     try {
+      if (AsyncStorage) {
+        await AsyncStorage.setItem(key, value);
+        return;
+      }
       if (typeof window !== 'undefined' && window.localStorage) {
         window.localStorage.setItem(key, value);
       }
     } catch {
-      // Ignore web storage errors
+      // Ignore storage errors
     }
   },
   async removeItem(key) {
     try {
+      if (AsyncStorage) {
+        await AsyncStorage.removeItem(key);
+        return;
+      }
       if (typeof window !== 'undefined' && window.localStorage) {
         window.localStorage.removeItem(key);
       }
     } catch {
-      // Ignore web storage errors
+      // Ignore storage errors
     }
   },
 };

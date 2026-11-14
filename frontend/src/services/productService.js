@@ -11,7 +11,65 @@
  * - getExploreProducts(filters, sort, page, limit)
  */
 
-import { getAccessToken } from './auth.js';
+import { getAccessToken, getCurrentUser } from './auth.js';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const STORAGE_PRODUCTS_KEY = 'shilpsetu_artisan_products';
+
+/** Load persistent products saved locally on device */
+export async function getPersistentProducts() {
+  try {
+    if (AsyncStorage) {
+      const data = await AsyncStorage.getItem(STORAGE_PRODUCTS_KEY);
+      if (data) {
+        const parsed = JSON.parse(data);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    }
+  } catch (err) {
+    console.warn('getPersistentProducts read error:', err);
+  }
+  return [];
+}
+
+/** Save persistent product locally on device */
+export async function savePersistentProduct(product) {
+  try {
+    if (AsyncStorage && product) {
+      const existing = await getPersistentProducts();
+      const updated = [product, ...existing.filter((p) => p.id !== product.id)];
+      await AsyncStorage.setItem(STORAGE_PRODUCTS_KEY, JSON.stringify(updated));
+    }
+  } catch (err) {
+    console.warn('savePersistentProduct write error:', err);
+  }
+}
+
+/** Update persistent product locally on device */
+export async function updatePersistentProduct(productId, updatedFields) {
+  try {
+    if (AsyncStorage) {
+      const existing = await getPersistentProducts();
+      const updated = existing.map((p) => (p.id === productId ? { ...p, ...updatedFields } : p));
+      await AsyncStorage.setItem(STORAGE_PRODUCTS_KEY, JSON.stringify(updated));
+    }
+  } catch (err) {
+    console.warn('updatePersistentProduct error:', err);
+  }
+}
+
+/** Delete persistent product locally on device */
+export async function removePersistentProduct(productId) {
+  try {
+    if (AsyncStorage) {
+      const existing = await getPersistentProducts();
+      const updated = existing.filter((p) => p.id !== productId);
+      await AsyncStorage.setItem(STORAGE_PRODUCTS_KEY, JSON.stringify(updated));
+    }
+  } catch (err) {
+    console.warn('removePersistentProduct error:', err);
+  }
+}
 
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
@@ -746,6 +804,10 @@ export async function createProduct(productData, images = []) {
       if (rpcRes.ok) {
         const rpcData = await rpcRes.json();
         if (rpcData && rpcData.success) {
+          if (rpcData.product) {
+            FALLBACK_PRODUCTS.unshift(rpcData.product);
+            await savePersistentProduct(rpcData.product);
+          }
           return {
             success: true,
             product: rpcData.product,
@@ -816,6 +878,15 @@ export async function createProduct(productData, images = []) {
       if (res.ok) {
         const inserted = await res.json();
         const createdObj = Array.isArray(inserted) ? inserted[0] : inserted;
+        if (createdObj) {
+          const itemToStore = {
+            ...createdObj,
+            artisan_id: currentUserId,
+            artisan_name: currentArtisanName,
+          };
+          FALLBACK_PRODUCTS.unshift(itemToStore);
+          await savePersistentProduct(itemToStore);
+        }
         return {
           success: true,
           product: createdObj,
@@ -833,6 +904,16 @@ export async function createProduct(productData, images = []) {
   }
 
   // 4. Local fallback response
+  let resolvedArtisanId = artisan_id;
+  let resolvedArtisanName = artisan_name;
+  if (!resolvedArtisanId) {
+    try {
+      const u = await getCurrentUser();
+      resolvedArtisanId = u?.id || null;
+      resolvedArtisanName = u?.user_metadata?.full_name || u?.user_metadata?.name || resolvedArtisanName;
+    } catch {}
+  }
+
   const newProduct = {
     id: `prod-local-${Date.now()}`,
     name: resolvedName,
@@ -842,16 +923,20 @@ export async function createProduct(productData, images = []) {
     stock: resolvedStock,
     stock_quantity: resolvedStock,
     category,
+    category_name: category,
     tags: Array.isArray(tags) ? tags : [],
     image_url: primaryImageUrl,
     image_urls: uploadedImageUrls,
     is_active: true,
     rating: 5.0,
     reviews_count: 0,
+    artisan_id: resolvedArtisanId,
+    artisan_name: resolvedArtisanName,
     created_at: new Date().toISOString(),
   };
 
   FALLBACK_PRODUCTS.unshift(newProduct);
+  await savePersistentProduct(newProduct);
 
   return {
     success: true,
@@ -1263,6 +1348,7 @@ export async function updateProduct(productId, productData = {}, newImages = [],
           ...updatedProductData,
         };
       }
+      await updatePersistentProduct(productId, updatedProductData);
 
       return {
         success: true,
@@ -1290,6 +1376,7 @@ export async function updateProduct(productId, productData = {}, newImages = [],
       image_urls: finalImageUrls,
       updated_at: new Date().toISOString(),
     };
+    await updatePersistentProduct(productId, FALLBACK_PRODUCTS[idx]);
   }
 
   return {
@@ -1341,7 +1428,7 @@ export async function getMyProducts() {
         );
         if (res.ok) {
           const prods = await res.json();
-          if (Array.isArray(prods) && prods.length > 0) {
+          if (Array.isArray(prods)) {
             return prods.map(mapProduct);
           }
         }
@@ -1351,9 +1438,33 @@ export async function getMyProducts() {
     }
   }
 
-  // Return matching products from local memory (e.g. newly created products)
+  // 2. Combine with persistent on-device products so they remain saved across logouts/restarts
+  const persistentSaved = await getPersistentProducts();
+  if (Array.isArray(persistentSaved) && persistentSaved.length > 0) {
+    for (const p of persistentSaved) {
+      if (!FALLBACK_PRODUCTS.some((fp) => fp.id === p.id)) {
+        FALLBACK_PRODUCTS.unshift(p);
+      }
+    }
+  }
+
+  // Return ONLY products belonging to this artisan from local cache / persistent store
   if (Array.isArray(FALLBACK_PRODUCTS)) {
-    return FALLBACK_PRODUCTS.filter((p) => p.is_active !== false).map(mapProduct);
+    const user = await getCurrentUser();
+    const currentUserId = user?.id;
+    if (currentUserId) {
+      const myProds = FALLBACK_PRODUCTS.filter(
+        (p) => (p.artisan_id === currentUserId || (p.id && String(p.id).startsWith('prod-local-'))) && p.is_active !== false
+      );
+      if (myProds.length > 0) {
+        return myProds.map(mapProduct);
+      }
+    }
+    // If not authenticated or no matching ID, return persistent crafts created on device
+    const localNew = FALLBACK_PRODUCTS.filter(
+      (p) => p.id && String(p.id).startsWith('prod-local-') && p.is_active !== false
+    );
+    return localNew.map(mapProduct);
   }
 
   return [];
@@ -1380,6 +1491,10 @@ export async function deleteProduct(productId) {
         body: JSON.stringify({ is_active: false, updated_at: new Date().toISOString() }),
       });
 
+      await removePersistentProduct(productId);
+      const fIdx = FALLBACK_PRODUCTS.findIndex((p) => p.id === productId);
+      if (fIdx !== -1) FALLBACK_PRODUCTS[fIdx].is_active = false;
+
       if (res.ok) {
         return { success: true, message: 'Product archived successfully.' };
       }
@@ -1387,6 +1502,10 @@ export async function deleteProduct(productId) {
       return { success: false, error: err.message };
     }
   }
+
+  await removePersistentProduct(productId);
+  const fIdx = FALLBACK_PRODUCTS.findIndex((p) => p.id === productId);
+  if (fIdx !== -1) FALLBACK_PRODUCTS[fIdx].is_active = false;
 
   return { success: true };
 }

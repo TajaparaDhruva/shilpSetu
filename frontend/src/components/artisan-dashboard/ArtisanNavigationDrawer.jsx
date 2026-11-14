@@ -17,6 +17,7 @@ const defaultPottery = require('@/assets/images/shilpsetu/icon-pottery.svg');
 
 const DRAWER_ITEMS = [
   { id: 'dashboard', label: 'Artisan Dashboard', icon: '🏛️' },
+  { id: 'ai_assistant', label: 'AI Product Assistant ✨', icon: '✨' },
   { id: 'add_product', label: 'Add New Product', icon: '➕' },
   { id: 'manage_products', label: 'Manage Products', icon: '📦' },
   { id: 'orders', label: 'Manage Orders', icon: '🛍️' },

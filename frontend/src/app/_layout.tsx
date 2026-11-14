@@ -29,6 +29,7 @@ export default function RootLayout() {
           <Stack.Screen name="artisan-dashboard" options={{ headerShown: false }} />
           <Stack.Screen name="(artisan)/dashboard/index" options={{ headerShown: false }} />
           <Stack.Screen name="(artisan)/profile/index" options={{ headerShown: false }} />
+          <Stack.Screen name="(artisan)/ai-assistant/index" options={{ headerShown: false }} />
           <Stack.Screen name="(artisan)/products/index" options={{ headerShown: false }} />
           <Stack.Screen name="(artisan)/products/add" options={{ headerShown: false }} />
           <Stack.Screen name="(artisan)/products/edit/[id]" options={{ headerShown: false }} />

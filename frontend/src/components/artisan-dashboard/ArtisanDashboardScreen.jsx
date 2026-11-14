@@ -84,7 +84,9 @@ export default function ArtisanDashboardScreen() {
   };
 
   const handleDrawerOption = async (optionId) => {
-    if (optionId === 'add_product' || optionId === 'manage_products' || optionId === 'orders' || optionId === 'earnings') {
+    if (optionId === 'ai_assistant') {
+      router.push('/(artisan)/ai-assistant');
+    } else if (optionId === 'add_product' || optionId === 'manage_products' || optionId === 'orders' || optionId === 'earnings') {
       handleActionPress(optionId);
     } else if (optionId === 'profile') {
       router.push('/(artisan)/profile');

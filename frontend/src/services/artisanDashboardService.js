@@ -9,7 +9,7 @@
  */
 
 import { getAccessToken, getCurrentUser } from './auth';
-import { FALLBACK_PRODUCTS } from './productService';
+import { FALLBACK_PRODUCTS, getPersistentProducts } from './productService';
 
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
@@ -232,13 +232,18 @@ export async function getArtisanDashboardStats() {
         }
       }
 
-      // Fallback: If REST returned 0 or user is adding products locally, check FALLBACK_PRODUCTS
-      if (totalProducts === 0 && Array.isArray(FALLBACK_PRODUCTS)) {
-        const matchingLocal = FALLBACK_PRODUCTS.filter(
-          (p) => (p.artisan_id === user.id || !p.artisan_id || p.artisan_id === 'artisan-ramesh-1') && p.is_active !== false
-        );
-        if (matchingLocal.length > 0) {
-          totalProducts = matchingLocal.length;
+      // Fallback: If REST returned 0 or user is adding products locally, check persistent products & FALLBACK_PRODUCTS
+      if (totalProducts === 0) {
+        const persistentSaved = await getPersistentProducts();
+        if (Array.isArray(persistentSaved) && persistentSaved.length > 0) {
+          totalProducts = persistentSaved.filter((p) => p.is_active !== false).length;
+        } else if (Array.isArray(FALLBACK_PRODUCTS)) {
+          const matchingLocal = FALLBACK_PRODUCTS.filter(
+            (p) => (p.artisan_id === user.id || (p.id && String(p.id).startsWith('prod-local-'))) && p.is_active !== false
+          );
+          if (matchingLocal.length > 0) {
+            totalProducts = matchingLocal.length;
+          }
         }
       }
 
@@ -254,12 +259,15 @@ export async function getArtisanDashboardStats() {
     }
   }
 
-  // Count active products from local memory when offline / unauthenticated
+  // Count active products belonging to this artisan from local memory / persistent storage
   let fallbackCount = 0;
-  if (Array.isArray(FALLBACK_PRODUCTS)) {
-    const artisanId = user?.id || 'artisan-ramesh-1';
+  const persistentSaved = await getPersistentProducts();
+  if (Array.isArray(persistentSaved) && persistentSaved.length > 0) {
+    fallbackCount = persistentSaved.filter((p) => p.is_active !== false).length;
+  } else if (Array.isArray(FALLBACK_PRODUCTS)) {
+    const artisanId = user?.id;
     fallbackCount = FALLBACK_PRODUCTS.filter(
-      (p) => (p.artisan_id === artisanId || !p.artisan_id || p.artisan_id === 'artisan-ramesh-1') && p.is_active !== false
+      (p) => (artisanId ? p.artisan_id === artisanId : (p.id && String(p.id).startsWith('prod-local-'))) && p.is_active !== false
     ).length;
   }
 

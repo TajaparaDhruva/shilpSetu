@@ -19,7 +19,7 @@ import ProductFormInput from './ProductFormInput';
 import ProductCategoryPicker, { INITIAL_CATEGORIES } from './ProductCategoryPicker';
 import ProductPriceStockInput from './ProductPriceStockInput';
 import ProductTagSelector from './ProductTagSelector';
-import { createProduct, getProductCategories } from '@/services/productService';
+import { createProduct, getProductCategories, getMyProducts } from '@/services/productService';
 import { getArtisanDashboardProfile } from '@/services/artisanDashboardService';
 import { ShilpColors } from '@/constants/shilpSetuTheme';
 
@@ -35,6 +35,7 @@ export default function AddProductScreen() {
 
   // Artisan identity
   const [artisan, setArtisan] = useState(null);
+  const [existingProducts, setExistingProducts] = useState([]);
 
   // Form Fields
   const [images, setImages] = useState([]);
@@ -54,6 +55,9 @@ export default function AddProductScreen() {
     getArtisanDashboardProfile().then((p) => setArtisan(p)).catch(() => {});
     getProductCategories().then((cats) => {
       if (Array.isArray(cats) && cats.length > 0) setCategories(cats);
+    }).catch(() => {});
+    getMyProducts().then((prods) => {
+      if (Array.isArray(prods)) setExistingProducts(prods);
     }).catch(() => {});
   }, []);
 
@@ -204,9 +208,23 @@ export default function AddProductScreen() {
           <TouchableOpacity
             style={[styles.toggleBtn, styles.toggleInactive]}
             activeOpacity={0.8}
-            onPress={() => router.push('/(artisan)/products/edit/prod-pot-1')}
+            onPress={() => {
+              if (existingProducts.length > 0) {
+                router.push(`/(artisan)/products/edit/${existingProducts[0].id}`);
+              } else {
+                router.push('/(artisan)/products');
+              }
+            }}
           >
             <Text style={styles.toggleInactiveText}>✎ Edit Product</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.toggleBtn, styles.toggleInactive, { borderColor: '#A85E2B', borderWidth: 1 }]}
+            activeOpacity={0.8}
+            onPress={() => router.push('/(artisan)/ai-assistant')}
+          >
+            <Text style={[styles.toggleInactiveText, { color: '#A85E2B' }]}>✨ AI Assistant</Text>
           </TouchableOpacity>
         </View>
 
