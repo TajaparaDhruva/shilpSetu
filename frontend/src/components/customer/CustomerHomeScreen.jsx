@@ -182,7 +182,7 @@ export default function CustomerHomeScreen() {
     } else if (tabKey === 'orders') {
       router.push('/(customer)/orders');
     } else if (tabKey === 'wishlist') {
-      Alert.alert('My Wishlist', `${wishlistIds.size} item(s) saved in your wishlist.`);
+      router.push('/(customer)/wishlist');
     }
   };
 

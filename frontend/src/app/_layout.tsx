@@ -28,6 +28,8 @@ export default function RootLayout() {
           <Stack.Screen name="(customer)/artisan/[id]" options={{ headerShown: false }} />
           <Stack.Screen name="artisan-dashboard" options={{ headerShown: false }} />
           <Stack.Screen name="(artisan)/dashboard/index" options={{ headerShown: false }} />
+          <Stack.Screen name="(artisan)/profile/index" options={{ headerShown: false }} />
+          <Stack.Screen name="(artisan)/products/index" options={{ headerShown: false }} />
           <Stack.Screen name="(artisan)/products/add" options={{ headerShown: false }} />
           <Stack.Screen name="(artisan)/products/edit/[id]" options={{ headerShown: false }} />
           <Stack.Screen name="(customer)/cart" options={{ headerShown: false }} />
@@ -36,6 +38,7 @@ export default function RootLayout() {
           <Stack.Screen name="(customer)/checkout/success" options={{ headerShown: false }} />
           <Stack.Screen name="(customer)/orders" options={{ headerShown: false }} />
           <Stack.Screen name="(customer)/orders/[id]" options={{ headerShown: false }} />
+          <Stack.Screen name="(customer)/wishlist" options={{ headerShown: false }} />
         </Stack>
       </AuthProvider>
     </ThemeProvider>

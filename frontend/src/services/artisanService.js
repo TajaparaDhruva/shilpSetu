@@ -10,7 +10,7 @@
  * - getArtisanFollowerCount(artisanId)
  */
 
-import { getAccessToken } from './auth.js';
+import { getAccessToken, getCurrentUser } from './auth.js';
 import { FALLBACK_PRODUCTS } from './productService.js';
 
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
@@ -127,9 +127,60 @@ export async function getArtisanProfile(artisanId) {
           };
         }
       }
+      // 3. Fallback: If querying the authenticated artisan directly, check profiles and metadata
+      const currentUser = await getCurrentUser();
+      if (currentUser && (currentUser.id === artisanId || !artisanId)) {
+        const rawName = currentUser.user_metadata?.full_name || currentUser.user_metadata?.name || 'Artisan';
+        return {
+          artisan_id: currentUser.id,
+          name: rawName,
+          profile_picture: currentUser.user_metadata?.avatar_url || null,
+          avatar_url: currentUser.user_metadata?.avatar_url || null,
+          craft_specialization: 'Handicraft Artisan',
+          craft_type: 'Handicraft Artisan',
+          biography: `Welcome to my ShilpSetu craft store. I handcraft traditional goods with passion and care.`,
+          location: 'India',
+          city: '',
+          state: 'India',
+          is_verified: true,
+          joined_date: currentUser.created_at || new Date().toISOString(),
+          story_video_url: null,
+          storyVideoUrl: null,
+          craft_specialties: ['Handmade', 'Eco-Friendly'],
+          specialties: ['Handmade', 'Eco-Friendly'],
+          workshop_address: '',
+          experience_years: 1,
+        };
+      }
     } catch {
       // Fall through to fallback
     }
+  }
+
+  // Check if artisanId matches currentUser
+  const currentUser = await getCurrentUser();
+  if (currentUser && (currentUser.id === artisanId || !artisanId)) {
+    const rawName = currentUser.user_metadata?.full_name || currentUser.user_metadata?.name || 'Artisan';
+    return {
+      artisan_id: currentUser.id,
+      name: rawName,
+      profile_picture: currentUser.user_metadata?.avatar_url || null,
+      avatar_url: currentUser.user_metadata?.avatar_url || null,
+      craft_specialization: 'Handicraft Artisan',
+      craft_type: 'Handicraft Artisan',
+      biography: `Welcome to my ShilpSetu craft store. I handcraft traditional goods with passion and care.`,
+      location: 'India',
+      city: '',
+      state: 'India',
+      is_verified: true,
+      joined_date: currentUser.created_at || new Date().toISOString(),
+      story_video_url: null,
+      storyVideoUrl: null,
+      craft_specialties: ['Handmade', 'Eco-Friendly'],
+      specialties: ['Handmade', 'Eco-Friendly'],
+      workshop_address: '',
+      experience_years: 1,
+    };
   }
 
   const fallback =
@@ -175,6 +226,16 @@ export async function getArtisanStatistics(artisanId) {
     } catch {
       // Fall through
     }
+  }
+
+  // Check if artisanId matches currentUser or clean state
+  const currentUser = await getCurrentUser();
+  if (currentUser && (currentUser.id === artisanId || !artisanId)) {
+    return {
+      productsCount: 0,
+      customersCount: '0',
+      experienceYears: '1 Year',
+    };
   }
 
   return {

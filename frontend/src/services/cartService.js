@@ -1,44 +1,21 @@
 /**
- * cartService.js — Complete Cart Service for ShilpSetu
+ * cartService.js — Complete Persistent Cart Service for ShilpSetu
  *
- * Implements:
- * - getCartItems()
- * - updateCartQuantity(productId, quantity)
- * - removeCartItem(productId)
- * - clearCart()
- * - getCartSummary()
- * - addToCart(productOrId, quantity)
- * - getCartCount()
- * - getCart()
+ * Requirements:
+ * - Persistent cart bound to authenticated user's ID
+ * - No dummy items on empty state
+ * - Automatic DB sync and retrieval on login/reload
+ * - Instant badge updates
+ * - Stock validation and duplicate avoidance
  */
 
 import { getCurrentUser, getAccessToken } from './auth.js';
-import { FALLBACK_PRODUCTS } from './productService.js';
 
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
-export const DEFAULT_CART_ITEMS = [
-  {
-    id: 'cart-item-1',
-    product_id: 'prod-pot-1',
-    product: FALLBACK_PRODUCTS[0],
-    quantity: 1,
-    addedAt: new Date().toISOString(),
-  },
-  {
-    id: 'cart-item-2',
-    product_id: 'prod-jewel-1',
-    product: FALLBACK_PRODUCTS[2],
-    quantity: 1,
-    addedAt: new Date().toISOString(),
-  },
-];
-
+// Real in-memory session cache (starts empty, NEVER seeded with dummy items)
 const localCart = new Map();
-DEFAULT_CART_ITEMS.forEach((item) => {
-  localCart.set(item.product_id, item);
-});
 
 function authHeaders(token) {
   const headers = {
@@ -51,14 +28,47 @@ function authHeaders(token) {
 }
 
 /**
+ * Reset local session cart cache on logout
+ */
+export function resetLocalCartCache() {
+  localCart.clear();
+}
+
+/**
  * 1. getCartItems() / getCart()
- * Retrieve the authenticated customer's cart items with full product details
+ * Retrieve the authenticated customer's cart items from Supabase with full product details
  */
 export async function getCartItems() {
   const token = getAccessToken();
   const user = await getCurrentUser();
 
   if (user && token && SUPABASE_URL) {
+    // 1a. Try persistent RPC first
+    try {
+      const rpcRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_user_cart_details`, {
+        method: 'POST',
+        headers: authHeaders(token),
+      });
+
+      if (rpcRes.ok) {
+        const rpcData = await rpcRes.json();
+        if (rpcData && rpcData.success && Array.isArray(rpcData.items)) {
+          localCart.clear();
+          rpcData.items.forEach((item) => {
+            localCart.set(item.product_id, {
+              id: item.id || item.cart_item_id,
+              product_id: item.product_id,
+              product: item.product,
+              quantity: item.quantity,
+              addedAt: item.addedAt,
+            });
+          });
+          return Array.from(localCart.values());
+        }
+      }
+    } catch {}
+
+    // 1b. Direct table query fallback
     try {
       const res = await fetch(
         `${SUPABASE_URL}/rest/v1/cart_items?user_id=eq.${user.id}&select=*,products(*)`,
@@ -66,20 +76,21 @@ export async function getCartItems() {
       );
       if (res.ok) {
         const data = await res.json();
-        if (Array.isArray(data) && data.length > 0) {
-          localCart.clear();
+        localCart.clear();
+        if (Array.isArray(data)) {
           data.forEach((item) => {
             localCart.set(item.product_id, {
+              id: item.id,
+              product_id: item.product_id,
               product: item.products || { id: item.product_id },
               quantity: item.quantity,
-              id: item.id,
+              addedAt: item.created_at,
             });
           });
         }
+        return Array.from(localCart.values());
       }
-    } catch {
-      // In-memory returns
-    }
+    } catch {}
   }
 
   return Array.from(localCart.values());
@@ -122,7 +133,7 @@ export async function updateCartQuantity(productId, quantity) {
 }
 
 /**
- * 3. removeCartItem(productId)
+ * 3. removeCartItem(productId) / removeFromCart(cartItemId)
  */
 export async function removeCartItem(productId) {
   localCart.delete(productId);
@@ -143,6 +154,35 @@ export async function removeCartItem(productId) {
   }
 
   return { success: true, product_id: productId };
+}
+
+export async function removeFromCart(cartItemIdOrProductId) {
+  // Check if it's in localCart by product_id
+  if (localCart.has(cartItemIdOrProductId)) {
+    return removeCartItem(cartItemIdOrProductId);
+  }
+  // Check by cart_item_id
+  for (const [prodId, item] of localCart.entries()) {
+    if (item.id === cartItemIdOrProductId) {
+      return removeCartItem(prodId);
+    }
+  }
+
+  const token = getAccessToken();
+  const user = await getCurrentUser();
+  if (user && token && SUPABASE_URL) {
+    try {
+      await fetch(
+        `${SUPABASE_URL}/rest/v1/cart_items?user_id=eq.${user.id}&id=eq.${cartItemIdOrProductId}`,
+        {
+          method: 'DELETE',
+          headers: authHeaders(token),
+        }
+      );
+    } catch {}
+  }
+
+  return { success: true };
 }
 
 /**
@@ -190,7 +230,7 @@ export async function getCartSummary() {
 }
 
 /**
- * Add a product to the user's cart with atomic DB RPC
+ * 6. addToCart(productOrId, quantity)
  */
 export async function addToCart(productOrId, quantity = 1) {
   const productId = typeof productOrId === 'object' ? (productOrId.id || productOrId.product_id) : productOrId;
@@ -213,16 +253,19 @@ export async function addToCart(productOrId, quantity = 1) {
   const currentQty = existing ? existing.quantity : 0;
   const newQty = currentQty + parsedQty;
 
-  if (productObj.stock !== undefined && productObj.stock > 0 && newQty > productObj.stock) {
+  const stockLimit = productObj.stock ?? productObj.stock_quantity;
+  if (stockLimit !== undefined && stockLimit > 0 && newQty > stockLimit) {
     return {
       success: false,
-      error: `Insufficient stock: only ${productObj.stock} available`,
-      available_stock: productObj.stock,
+      error: `Insufficient stock: only ${stockLimit} available`,
+      available_stock: stockLimit,
     };
   }
 
   localCart.set(productId, {
-    product: productObj,
+    id: existing?.id || `cart-${Date.now()}`,
+    product_id: productId,
+    product: { ...productObj, ...existing?.product },
     quantity: newQty,
     addedAt: new Date().toISOString(),
   });
@@ -231,13 +274,51 @@ export async function addToCart(productOrId, quantity = 1) {
   const user = await getCurrentUser();
 
   if (user && token && SUPABASE_URL) {
+    // Try RPC first
     try {
-      await fetch(`${SUPABASE_URL}/rest/v1/rpc/add_to_cart_item`, {
+      const rpcRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/add_to_cart_persistent`, {
         method: 'POST',
         headers: authHeaders(token),
         body: JSON.stringify({
           p_product_id: productId,
           p_quantity: parsedQty,
+        }),
+      });
+
+      if (rpcRes.ok) {
+        const rpcData = await rpcRes.json();
+        if (rpcData && rpcData.success) {
+          if (rpcData.cart_item_id && localCart.has(productId)) {
+            localCart.get(productId).id = rpcData.cart_item_id;
+          }
+          return {
+            success: true,
+            product_id: productId,
+            quantity: newQty,
+            totalItems: getCartCount(),
+          };
+        } else if (rpcData && rpcData.error) {
+          // Revert local optimistic quantity
+          if (existing) localCart.set(productId, existing);
+          else localCart.delete(productId);
+          return { success: false, error: rpcData.error };
+        }
+      }
+    } catch {}
+
+    // Direct upsert fallback
+    try {
+      await fetch(`${SUPABASE_URL}/rest/v1/cart_items`, {
+        method: 'POST',
+        headers: {
+          ...authHeaders(token),
+          Prefer: 'resolution=merge-duplicates',
+        },
+        body: JSON.stringify({
+          user_id: user.id,
+          product_id: productId,
+          quantity: newQty,
+          updated_at: new Date().toISOString(),
         }),
       });
     } catch {}
@@ -251,6 +332,9 @@ export async function addToCart(productOrId, quantity = 1) {
   };
 }
 
+/**
+ * 7. getCartCount()
+ */
 export function getCartCount() {
   let count = 0;
   for (const item of localCart.values()) {

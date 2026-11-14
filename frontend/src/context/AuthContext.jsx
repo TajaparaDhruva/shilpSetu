@@ -13,6 +13,8 @@ import {
   getInitialRoute,
 } from '@/services/auth';
 import { getUserProfile as fetchProfile, setUserRole as saveRoleService } from '@/services/profileService';
+import { resetLocalCartCache, getCartItems } from '@/services/cartService';
+import { resetLocalWishlistCache, getWishlist } from '@/services/wishlistService';
 
 const AuthContext = createContext(null);
 
@@ -68,6 +70,12 @@ export function AuthProvider({ children }) {
           if (isMounted) {
             setProfile(userProfile);
             setRole(effectiveRole);
+          }
+
+          // Hydrate persistent cart and wishlist for customer
+          if (effectiveRole === 'customer') {
+            getCartItems().catch(() => {});
+            getWishlist().catch(() => {});
           }
         }
       } catch (err) {
@@ -141,6 +149,13 @@ export function AuthProvider({ children }) {
         null;
 
       setRole(effectiveRole);
+
+      // Restore user-specific data from Supabase
+      if (effectiveRole === 'customer') {
+        getCartItems().catch(() => {});
+        getWishlist().catch(() => {});
+      }
+
       return authResult;
     } finally {
       setLoading(false);
@@ -163,6 +178,13 @@ export function AuthProvider({ children }) {
         null;
 
       setRole(effectiveRole);
+
+      // Restore user-specific data from Supabase
+      if (effectiveRole === 'customer') {
+        getCartItems().catch(() => {});
+        getWishlist().catch(() => {});
+      }
+
       return authResult;
     } finally {
       setLoading(false);
@@ -204,6 +226,9 @@ export function AuthProvider({ children }) {
     setLoading(true);
     try {
       await authLogout();
+      // Clear in-memory state without deleting database records
+      resetLocalCartCache();
+      resetLocalWishlistCache();
       setUser(null);
       setSession(null);
       setProfile(null);

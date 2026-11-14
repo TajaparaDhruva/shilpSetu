@@ -43,7 +43,7 @@ import { getCartCount } from '@/services/cartService';
 export default function ArtisanProfileScreen({ artisanId: propArtisanId }) {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const artisanId = propArtisanId || params?.id || 'artisan-ramesh-1';
+  const artisanId = propArtisanId || params?.id || null;
 
   // State
   const [artisan, setArtisan] = useState(null);

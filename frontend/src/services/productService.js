@@ -309,15 +309,23 @@ export async function getProductDetails(productId) {
           return mapProduct(viewData[0]);
         }
       }
+
+      // 3. Direct products table query
+      const prodRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/products?id=eq.${encodeURIComponent(productId)}&is_active=eq.true&select=*`,
+        { headers: authHeaders() }
+      );
+      if (prodRes.ok) {
+        const rows = await prodRes.json();
+        if (Array.isArray(rows) && rows.length > 0) {
+          return mapProduct(rows[0]);
+        }
+      }
     } catch {
-      // Fall through to fallback
+      // Fall through
     }
   }
 
-  const fallback = FALLBACK_PRODUCTS.find((p) => p.id === productId);
-  if (fallback && fallback.is_active) {
-    return mapProduct(fallback);
-  }
   return null;
 }
 
@@ -433,61 +441,35 @@ export async function searchProducts(query, filters = {}, sort = 'popular', page
         }
       }
     } catch {
-      // Fall through
+      // Fall through to REST query
     }
+
+    // Direct REST query if RPC is missing
+    try {
+      const offset = (page - 1) * limit;
+      let url = `${SUPABASE_URL}/rest/v1/products?is_active=eq.true&select=*`;
+      if (filters.category && filters.category.toLowerCase() !== 'all') {
+        url += `&category=ilike.*${encodeURIComponent(filters.category)}*`;
+      }
+      if (filters.inStockOnly !== false) {
+        url += `&stock=gt.0`;
+      }
+      url += `&limit=${limit}&offset=${offset}`;
+
+      const restRes = await fetch(url, { headers: authHeaders() });
+      if (restRes.ok) {
+        const prods = await restRes.json();
+        if (Array.isArray(prods)) {
+          return prods.map(mapProduct);
+        }
+      }
+    } catch {}
+
+    // Never return dummy products when database is accessible
+    return [];
   }
 
-  // Local fallback filter
-  let list = [...FALLBACK_PRODUCTS].filter((p) => p.is_active === true);
-  if (filters.inStockOnly !== false) {
-    list = list.filter((p) => (p.stock === undefined || p.stock > 0));
-  }
-  if (query && query.trim()) {
-    const q = query.toLowerCase().trim();
-    list = list.filter((p) => {
-      const matchName = p.name?.toLowerCase().includes(q);
-      const matchDesc = p.description?.toLowerCase().includes(q);
-      const matchArtisan = p.artisan_name?.toLowerCase().includes(q);
-      const matchCat = (p.category_name || p.category || '').toLowerCase().includes(q);
-      const matchTags = Array.isArray(p.tags) && p.tags.some((t) => t.toLowerCase().includes(q));
-      return matchName || matchDesc || matchArtisan || matchCat || matchTags;
-    });
-  }
-  if (filters.category && filters.category.toLowerCase() !== 'all') {
-    const cat = filters.category.toLowerCase().trim();
-    list = list.filter((p) => (p.category_name || p.category || '').toLowerCase().includes(cat));
-  }
-  if (filters.minPrice !== null && filters.minPrice !== undefined) {
-    list = list.filter((p) => p.price >= Number(filters.minPrice));
-  }
-  if (filters.maxPrice !== null && filters.maxPrice !== undefined) {
-    list = list.filter((p) => p.price <= Number(filters.maxPrice));
-  }
-  if (filters.minRating !== null && filters.minRating !== undefined) {
-    list = list.filter((p) => (p.rating || 0) >= Number(filters.minRating));
-  }
-
-  switch (sort) {
-    case 'newest':
-      list.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
-      break;
-    case 'price_low_high':
-      list.sort((a, b) => a.price - b.price);
-      break;
-    case 'price_high_low':
-      list.sort((a, b) => b.price - a.price);
-      break;
-    case 'highest_rated':
-      list.sort((a, b) => (b.rating || 0) - (a.rating || 0));
-      break;
-    case 'popular':
-    default:
-      list.sort((a, b) => (b.reviews_count || 0) - (a.reviews_count || 0));
-      break;
-  }
-
-  const offset = (page - 1) * limit;
-  return list.slice(offset, offset + limit).map(mapProduct);
+  return [];
 }
 
 /**
@@ -888,6 +870,51 @@ export async function getProductById(productId) {
   const token = getAccessToken();
 
   if (token && SUPABASE_URL) {
+    // 1. Try secure RPC get_artisan_product_by_id_rpc first
+    try {
+      const rpcRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_artisan_product_by_id_rpc`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ p_product_id: String(productId) }),
+      });
+
+      if (rpcRes.ok) {
+        const rpcData = await rpcRes.json();
+        if (rpcData && rpcData.success && rpcData.product) {
+          const p = rpcData.product;
+          return {
+            id: p.id,
+            name: p.product_name || p.name || '',
+            product_name: p.product_name || p.name || '',
+            category: p.category || p.category_name || 'Pottery & Ceramics',
+            category_id: p.category_id,
+            price: Number(p.price || 0),
+            stock: p.stock_quantity !== undefined ? p.stock_quantity : (p.stock !== undefined ? p.stock : 10),
+            stock_quantity: p.stock_quantity !== undefined ? p.stock_quantity : (p.stock !== undefined ? p.stock : 10),
+            description: p.description || '',
+            image_url: p.image_url,
+            image_urls: Array.isArray(p.image_urls) && p.image_urls.length > 0 ? p.image_urls : (p.image_url ? [p.image_url] : []),
+            tags: Array.isArray(p.tags) ? p.tags : [],
+            artisan_id: p.artisan_id,
+            artisan_name: p.artisan_name || 'Master Artisan',
+            is_active: p.is_active ?? true,
+            created_at: p.created_at,
+            updated_at: p.updated_at,
+          };
+        } else if (rpcData && rpcData.error && rpcData.error.includes('Unauthorized')) {
+          console.warn('getProductById: Unauthorized access to other artisan product');
+          return null;
+        }
+      }
+    } catch (rpcErr) {
+      // Fall through to direct table query
+    }
+
+    // 2. Direct REST query respecting RLS
     try {
       const res = await fetch(`${SUPABASE_URL}/rest/v1/products?id=eq.${encodeURIComponent(productId)}&select=*`, {
         headers: {
@@ -917,6 +944,7 @@ export async function getProductById(productId) {
             artisan_name: p.artisan_name || 'Master Artisan',
             is_active: p.is_active ?? true,
             created_at: p.created_at,
+            updated_at: p.updated_at,
           };
         }
       }
@@ -944,6 +972,7 @@ export async function getProductById(productId) {
       artisan_name: found.artisan_name || 'Master Artisan',
       is_active: found.is_active ?? true,
       created_at: found.created_at,
+      updated_at: found.updated_at,
     };
   }
 
@@ -951,23 +980,47 @@ export async function getProductById(productId) {
 }
 
 /**
- * 14. deleteProductImages(imagePaths)
+ * 14. deleteProductImages(imagePaths, productId)
  * Deletes obsolete image files from Supabase Storage bucket 'product-images'
+ * Verifies file ownership to ensure deletion only within the artisan's / product folder.
  */
-export async function deleteProductImages(imagePaths = []) {
+export async function deleteProductImages(imagePaths = [], productId = null) {
   if (!Array.isArray(imagePaths) || imagePaths.length === 0) return { success: true };
   const token = getAccessToken();
 
   if (token && SUPABASE_URL) {
     try {
-      // Extract file paths from public URLs if needed
+      // Determine artisan user id for path verification
+      let currentUserId = null;
+      try {
+        const userRes = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+          headers: {
+            apikey: SUPABASE_ANON_KEY,
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        if (userRes.ok) {
+          const userData = await userRes.json();
+          currentUserId = userData?.id;
+        }
+      } catch {}
+
+      // Extract file paths and filter safely
       const paths = imagePaths.map((item) => {
         if (typeof item === 'string' && item.includes('/product-images/')) {
           const parts = item.split('/product-images/');
           return parts[parts.length - 1];
         }
         return item;
-      }).filter(Boolean);
+      }).filter((path) => {
+        if (!path || typeof path !== 'string') return false;
+        // Verify path safety: if currentUserId is known, ensure path starts with it
+        if (currentUserId && !path.startsWith(`${currentUserId}/`)) {
+          console.warn('deleteProductImages: Rejecting unauthorized cross-artisan path delete:', path);
+          return false;
+        }
+        return true;
+      });
 
       if (paths.length > 0) {
         const res = await fetch(`${SUPABASE_URL}/storage/v1/object/product-images`, {
@@ -991,13 +1044,25 @@ export async function deleteProductImages(imagePaths = []) {
 
 /**
  * 15. updateProduct(productId, productData, newImages, removedImages)
- * Updates product details and images in Supabase products table
+ * Updates product details and images in Supabase products table.
+ * Supports:
+ * - Direct signature: updateProduct(productId, productData) where productData may include newImages/removedImages
+ * - Extended signature: updateProduct(productId, productData, newImages, removedImages)
+ *
+ * Sequence:
+ * 1. Validate inputs (price > 0, stock >= 0 integer, name, description <= 300, max 5 total images)
+ * 2. Upload newly added local images
+ * 3. Update Supabase products table (via update_product_rpc or PATCH)
+ * 4. Confirm database update
+ * 5. Delete removed storage files only after the database update succeeds
+ * 6. Clean up new orphaned uploads if database update fails
  */
-export async function updateProduct(productId, productData, newImages = [], removedImages = []) {
+export async function updateProduct(productId, productData = {}, newImages = [], removedImages = []) {
   if (!productId) {
     return { success: false, error: 'Product ID is required for editing.' };
   }
 
+  // Normalize productData parameters
   const {
     name,
     product_name,
@@ -1008,7 +1073,17 @@ export async function updateProduct(productId, productData, newImages = [], remo
     category,
     tags = [],
     existing_image_urls = [],
+    newImages: embeddedNewImages,
+    removedImages: embeddedRemovedImages,
   } = productData;
+
+  const actualNewImages = Array.isArray(newImages) && newImages.length > 0
+    ? newImages
+    : (Array.isArray(embeddedNewImages) ? embeddedNewImages : []);
+
+  const actualRemovedImages = Array.isArray(removedImages) && removedImages.length > 0
+    ? removedImages
+    : (Array.isArray(embeddedRemovedImages) ? embeddedRemovedImages : []);
 
   const resolvedName = (product_name || name || '').trim();
   const resolvedStock = stock_quantity !== undefined ? Number(stock_quantity) : (stock !== undefined ? Number(stock) : 0);
@@ -1019,10 +1094,13 @@ export async function updateProduct(productId, productData, newImages = [], remo
   if (!resolvedName) {
     return { success: false, error: 'Product name is required.' };
   }
-  if (!price || isNaN(resolvedPrice) || resolvedPrice <= 0) {
+  if (!category || (typeof category === 'string' && !category.trim())) {
+    return { success: false, error: 'Product category is required.' };
+  }
+  if (price === undefined || price === null || isNaN(resolvedPrice) || resolvedPrice <= 0) {
     return { success: false, error: 'Price must be greater than zero.' };
   }
-  if (resolvedStock === undefined || isNaN(resolvedStock) || resolvedStock < 0 || !Number.isInteger(resolvedStock)) {
+  if (resolvedStock === undefined || resolvedStock === null || isNaN(resolvedStock) || resolvedStock < 0 || !Number.isInteger(resolvedStock)) {
     return { success: false, error: 'Stock quantity must be a non-negative integer.' };
   }
   if (!resolvedDesc) {
@@ -1032,9 +1110,20 @@ export async function updateProduct(productId, productData, newImages = [], remo
     return { success: false, error: 'Product description must not exceed 300 characters.' };
   }
 
-  // Combine existing images (not removed) with new images
-  const remainingImages = existing_image_urls.filter((url) => !removedImages.includes(url));
-  const totalImageCount = remainingImages.length + (Array.isArray(newImages) ? newImages.length : 0);
+  // Determine current image set
+  let baseImages = [];
+  if (Array.isArray(existing_image_urls) && existing_image_urls.length > 0) {
+    baseImages = existing_image_urls;
+  } else {
+    // If not supplied, attempt to read existing images from local cache or product
+    const existing = await getProductById(productId);
+    if (existing && Array.isArray(existing.image_urls)) {
+      baseImages = existing.image_urls;
+    }
+  }
+
+  const remainingImages = baseImages.filter((url) => !actualRemovedImages.includes(url));
+  const totalImageCount = remainingImages.length + actualNewImages.length;
 
   if (totalImageCount === 0) {
     return { success: false, error: 'Please keep or add at least one product image.' };
@@ -1043,11 +1132,21 @@ export async function updateProduct(productId, productData, newImages = [], remo
     return { success: false, error: 'A product can have a maximum of 5 images.' };
   }
 
+  // Validate format of any local image paths
+  for (const img of actualNewImages) {
+    if (typeof img === 'string' && (img.startsWith('file://') || img.startsWith('content://') || img.includes('.'))) {
+      const cleanPath = img.split('?')[0].toLowerCase();
+      if (!cleanPath.endsWith('.jpg') && !cleanPath.endsWith('.jpeg') && !cleanPath.endsWith('.png') && !cleanPath.startsWith('http') && !cleanPath.startsWith('data:image')) {
+        return { success: false, error: 'Invalid image format. Only JPG, JPEG and PNG images are supported.' };
+      }
+    }
+  }
+
   // 2. Upload any newly added local images
   let uploadedNewUrls = [];
-  if (Array.isArray(newImages) && newImages.length > 0) {
+  if (actualNewImages.length > 0) {
     try {
-      uploadedNewUrls = await uploadProductImages(newImages, productId);
+      uploadedNewUrls = await uploadProductImages(actualNewImages, productId);
     } catch (err) {
       return { success: false, error: err.message || 'Failed to upload new product images.' };
     }
@@ -1060,54 +1159,120 @@ export async function updateProduct(productId, productData, newImages = [], remo
 
   // 3. Update Supabase
   if (token && SUPABASE_URL) {
-    try {
-      const payload = {
-        name: resolvedName,
-        product_name: resolvedName,
-        description: resolvedDesc,
-        price: resolvedPrice,
-        stock: resolvedStock,
-        stock_quantity: resolvedStock,
-        category: category,
-        category_name: category,
-        tags: Array.isArray(tags) ? tags : [],
-        image_url: primaryImageUrl,
-        image_urls: finalImageUrls,
-        updated_at: new Date().toISOString(),
-      };
+    let updateSucceeded = false;
+    let updatedProductData = null;
 
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/products?id=eq.${encodeURIComponent(productId)}`, {
-        method: 'PATCH',
+    // 3a. Try secure RPC update_product_rpc first (atomic server-side validation & ownership check)
+    try {
+      const rpcRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/update_product_rpc`, {
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           apikey: SUPABASE_ANON_KEY,
           Authorization: `Bearer ${token}`,
-          Prefer: 'return=representation',
         },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          p_product_id: String(productId),
+          p_product_name: resolvedName,
+          p_category: category,
+          p_price: resolvedPrice,
+          p_stock_quantity: resolvedStock,
+          p_description: resolvedDesc,
+          p_image_urls: finalImageUrls,
+          p_tags: Array.isArray(tags) ? tags : [],
+        }),
       });
 
-      if (res.ok) {
-        const updated = await res.json();
-        const updatedObj = Array.isArray(updated) && updated.length > 0 ? updated[0] : payload;
-
-        // Clean up removed storage files safely after successful update
-        if (removedImages.length > 0) {
-          deleteProductImages(removedImages).catch(() => {});
+      if (rpcRes.ok) {
+        const rpcJson = await rpcRes.json();
+        if (rpcJson && rpcJson.success) {
+          updateSucceeded = true;
+          updatedProductData = rpcJson.product;
+        } else if (rpcJson && rpcJson.error) {
+          // If RPC returned a validation/authorization error, cleanup new uploads and return error
+          if (uploadedNewUrls.length > 0) {
+            deleteProductImages(uploadedNewUrls, productId).catch(() => {});
+          }
+          return { success: false, error: rpcJson.error };
         }
+      }
+    } catch (rpcErr) {
+      // Fall through to direct PATCH
+    }
 
-        return {
-          success: true,
-          product: updatedObj,
-          message: 'Product updated successfully!',
+    // 3b. Fallback to direct REST PATCH with RLS
+    if (!updateSucceeded) {
+      try {
+        const payload = {
+          name: resolvedName,
+          product_name: resolvedName,
+          description: resolvedDesc,
+          price: resolvedPrice,
+          stock: resolvedStock,
+          stock_quantity: resolvedStock,
+          category: category,
+          category_name: category,
+          tags: Array.isArray(tags) ? tags : [],
+          image_url: primaryImageUrl,
+          image_urls: finalImageUrls,
+          updated_at: new Date().toISOString(),
+        };
+
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/products?id=eq.${encodeURIComponent(productId)}`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            apikey: SUPABASE_ANON_KEY,
+            Authorization: `Bearer ${token}`,
+            Prefer: 'return=representation',
+          },
+          body: JSON.stringify(payload),
+        });
+
+        if (res.ok) {
+          const updated = await res.json();
+          updateSucceeded = true;
+          updatedProductData = Array.isArray(updated) && updated.length > 0 ? updated[0] : payload;
+        } else {
+          const errData = await res.json().catch(() => ({}));
+          // Clean up newly uploaded files if update failed
+          if (uploadedNewUrls.length > 0) {
+            deleteProductImages(uploadedNewUrls, productId).catch(() => {});
+          }
+          return {
+            success: false,
+            error: errData?.message || 'Failed to update product in database.',
+          };
+        }
+      } catch (err) {
+        console.warn('updateProduct Supabase PATCH error:', err);
+      }
+    }
+
+    // 3c. If update succeeded in Supabase, safely delete obsolete images
+    if (updateSucceeded) {
+      if (actualRemovedImages.length > 0) {
+        deleteProductImages(actualRemovedImages, productId).catch(() => {});
+      }
+
+      // Synchronize in local memory cache
+      const idx = FALLBACK_PRODUCTS.findIndex((p) => p.id === productId);
+      if (idx !== -1) {
+        FALLBACK_PRODUCTS[idx] = {
+          ...FALLBACK_PRODUCTS[idx],
+          ...updatedProductData,
         };
       }
-    } catch (err) {
-      console.warn('updateProduct Supabase PATCH error:', err);
+
+      return {
+        success: true,
+        product: updatedProductData,
+        message: 'Product updated successfully!',
+      };
     }
   }
 
-  // 4. Update local fallback memory
+  // 4. Update local fallback memory (offline or standalone mode)
   const idx = FALLBACK_PRODUCTS.findIndex((p) => p.id === productId);
   if (idx !== -1) {
     FALLBACK_PRODUCTS[idx] = {
@@ -1119,6 +1284,7 @@ export async function updateProduct(productId, productData, newImages = [], remo
       stock: resolvedStock,
       stock_quantity: resolvedStock,
       category,
+      category_name: category,
       tags: Array.isArray(tags) ? tags : [],
       image_url: primaryImageUrl,
       image_urls: finalImageUrls,
@@ -1131,4 +1297,96 @@ export async function updateProduct(productId, productData, newImages = [], remo
     product: idx !== -1 ? FALLBACK_PRODUCTS[idx] : { id: productId, name: resolvedName },
     message: 'Product updated successfully!',
   };
+}
+
+/**
+ * 16. getMyProducts()
+ * Fetches exclusively the authenticated artisan's products from Supabase
+ */
+export async function getMyProducts() {
+  const token = getAccessToken();
+  if (token && SUPABASE_URL) {
+    try {
+      // 1. Try secure RPC function
+      const rpcRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_my_artisan_products`, {
+        method: 'POST',
+        headers: authHeaders(),
+      });
+      if (rpcRes.ok) {
+        const rpcData = await rpcRes.json();
+        if (rpcData && rpcData.success && Array.isArray(rpcData.products)) {
+          return rpcData.products.map(mapProduct);
+        }
+      }
+
+      // 2. Direct REST query respecting artisan_id ownership
+      let currentUserId = null;
+      try {
+        const userRes = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+          headers: {
+            apikey: SUPABASE_ANON_KEY,
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        if (userRes.ok) {
+          const userData = await userRes.json();
+          currentUserId = userData?.id;
+        }
+      } catch {}
+
+      if (currentUserId) {
+        const res = await fetch(
+          `${SUPABASE_URL}/rest/v1/products?artisan_id=eq.${encodeURIComponent(currentUserId)}&is_active=neq.false&select=*&order=created_at.desc`,
+          { headers: authHeaders() }
+        );
+        if (res.ok) {
+          const prods = await res.json();
+          if (Array.isArray(prods) && prods.length > 0) {
+            return prods.map(mapProduct);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('getMyProducts error:', err);
+    }
+  }
+
+  // Return matching products from local memory (e.g. newly created products)
+  if (Array.isArray(FALLBACK_PRODUCTS)) {
+    return FALLBACK_PRODUCTS.filter((p) => p.is_active !== false).map(mapProduct);
+  }
+
+  return [];
+}
+
+/**
+ * 17. deleteProduct(productId)
+ * Soft-archives or safely deletes an artisan's product verifying ownership
+ */
+export async function deleteProduct(productId) {
+  if (!productId) return { success: false, error: 'Product ID is required.' };
+  const token = getAccessToken();
+
+  if (token && SUPABASE_URL) {
+    try {
+      // Soft-archive by setting is_active = false so historical orders remain valid
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/products?id=eq.${encodeURIComponent(productId)}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ is_active: false, updated_at: new Date().toISOString() }),
+      });
+
+      if (res.ok) {
+        return { success: true, message: 'Product archived successfully.' };
+      }
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  }
+
+  return { success: true };
 }

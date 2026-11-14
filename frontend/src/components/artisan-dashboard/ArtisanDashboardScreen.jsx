@@ -7,13 +7,14 @@ import {
   StatusBar,
   Alert,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ArtisanDashboardHeader from './ArtisanDashboardHeader';
 import ArtisanWelcomeSection from './ArtisanWelcomeSection';
 import ArtisanBanner from './ArtisanBanner';
 import ArtisanStatsGrid from './ArtisanStatsGrid';
 import ArtisanQuickActions from './ArtisanQuickActions';
+import ArtisanProductsSection from './ArtisanProductsSection';
 import RecentOrdersSection from './RecentOrdersSection';
 import ArtisanBottomNavigation from './ArtisanBottomNavigation';
 import ArtisanNavigationDrawer from './ArtisanNavigationDrawer';
@@ -22,6 +23,7 @@ import {
   getArtisanDashboardStats,
   getArtisanRecentOrders,
 } from '@/services/artisanDashboardService';
+import { getMyProducts } from '@/services/productService';
 import { logout } from '@/services/auth';
 import { ShilpColors } from '@/constants/shilpSetuTheme';
 
@@ -31,6 +33,7 @@ export default function ArtisanDashboardScreen() {
 
   const [profile, setProfile] = useState(null);
   const [stats, setStats] = useState(null);
+  const [products, setProducts] = useState([]);
   const [recentOrders, setRecentOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -38,13 +41,15 @@ export default function ArtisanDashboardScreen() {
 
   const loadData = useCallback(async () => {
     try {
-      const [p, s, o] = await Promise.all([
+      const [p, s, prods, o] = await Promise.all([
         getArtisanDashboardProfile(),
         getArtisanDashboardStats(),
+        getMyProducts(),
         getArtisanRecentOrders(3),
       ]);
       setProfile(p);
       setStats(s);
+      setProducts(Array.isArray(prods) ? prods : []);
       setRecentOrders(o);
     } catch (err) {
       console.warn('Failed to load artisan dashboard data:', err);
@@ -54,9 +59,12 @@ export default function ArtisanDashboardScreen() {
     }
   }, []);
 
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
+  // Refresh every time the Artisan Dashboard comes into focus (e.g. after adding or editing a product)
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, [loadData])
+  );
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -67,7 +75,7 @@ export default function ArtisanDashboardScreen() {
     if (actionId === 'add_product') {
       router.push('/(artisan)/products/add');
     } else if (actionId === 'manage_products') {
-      Alert.alert('Manage Products', 'Opening Product Inventory...');
+      router.push('/(artisan)/products');
     } else if (actionId === 'orders') {
       Alert.alert('Manage Orders', 'Opening Artisan Orders...');
     } else if (actionId === 'earnings') {
@@ -79,11 +87,7 @@ export default function ArtisanDashboardScreen() {
     if (optionId === 'add_product' || optionId === 'manage_products' || optionId === 'orders' || optionId === 'earnings') {
       handleActionPress(optionId);
     } else if (optionId === 'profile') {
-      if (profile?.id) {
-        router.push(`/(customer)/artisan/${profile.id}`);
-      } else {
-        router.push('/(customer)/home');
-      }
+      router.push('/(artisan)/profile');
     } else if (optionId === 'switch_customer') {
       router.replace('/(customer)/home');
     } else if (optionId === 'logout') {
@@ -105,15 +109,13 @@ export default function ArtisanDashboardScreen() {
     if (tabKey === 'dashboard') {
       // already here
     } else if (tabKey === 'products') {
-      Alert.alert('Products', 'Viewing your craft catalog...');
+      router.push('/(artisan)/products');
     } else if (tabKey === 'orders') {
       Alert.alert('Orders', 'Viewing orders for your products...');
     } else if (tabKey === 'earnings') {
       Alert.alert('Earnings', 'Viewing your revenue breakdown...');
     } else if (tabKey === 'profile') {
-      if (profile?.id) {
-        router.push(`/(customer)/artisan/${profile.id}`);
-      }
+      router.push('/(artisan)/profile');
     }
   };
 
@@ -127,7 +129,7 @@ export default function ArtisanDashboardScreen() {
           onMenuPress={() => setDrawerVisible(true)}
           onNotificationPress={() => Alert.alert('Notifications', 'You have no new alerts.')}
           onProfilePress={() => {
-            if (profile?.id) router.push(`/(customer)/artisan/${profile.id}`);
+            router.push('/(artisan)/profile');
           }}
           artisanAvatar={profile?.avatarUrl}
           isOnline={profile?.isOnline ?? true}
@@ -160,6 +162,15 @@ export default function ArtisanDashboardScreen() {
 
         {/* Quick Actions (Add Product, Manage Products, Orders, Earnings) */}
         <ArtisanQuickActions onActionPress={handleActionPress} />
+
+        {/* My Products Section on Dashboard */}
+        <ArtisanProductsSection
+          products={products}
+          loading={loading}
+          onAddPress={() => handleActionPress('add_product')}
+          onEditPress={(item) => router.push(`/(artisan)/products/edit/${item.id}`)}
+          onViewProductPress={(item) => router.push(`/(customer)/product/${item.id}`)}
+        />
 
         {/* Recent Orders Section */}
         <RecentOrdersSection
@@ -200,4 +211,3 @@ const styles = StyleSheet.create({
     paddingTop: 4,
   },
 });
-

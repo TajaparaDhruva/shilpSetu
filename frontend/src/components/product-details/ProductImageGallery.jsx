@@ -37,11 +37,11 @@ export default function ProductImageGallery({
 }) {
   const fallbackImg = FALLBACK_IMAGE_MAP[imageKey] || bannerPottery;
 
-  // Compile list of image sources
+  // Compile list of image sources: support real image URIs or fallback asset
   const galleryImages =
     images && images.length > 0
       ? images
-      : [fallbackImg, fallbackImg, fallbackImg, fallbackImg];
+      : [fallbackImg];
 
   const currentMainImage = galleryImages[selectedImageIndex] || galleryImages[0] || fallbackImg;
 

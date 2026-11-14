@@ -1,6 +1,9 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { Image } from 'expo-image';
 import { ShilpColors } from '@/constants/shilpSetuTheme';
+
+const shoppingBagIcon = require('@/assets/images/shilpsetu/icon-shopping-bag.svg');
 
 export default function EmptyOrders({ filter = 'All Orders', onContinueShopping }) {
   const isFiltered = filter && filter !== 'All Orders';
@@ -8,10 +11,10 @@ export default function EmptyOrders({ filter = 'All Orders', onContinueShopping 
   return (
     <View style={styles.container}>
       <View style={styles.iconCircle}>
-        <Text style={styles.icon}>📦</Text>
+        <Image source={shoppingBagIcon} style={styles.boxIcon} contentFit="contain" />
       </View>
       <Text style={styles.title}>
-        {isFiltered ? `No ${filter} Orders` : 'No Orders Yet'}
+        {isFiltered ? `No ${filter} Orders` : "You haven't placed any orders yet"}
       </Text>
       <Text style={styles.subtitle}>
         {isFiltered
@@ -48,8 +51,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 16,
   },
-  icon: {
-    fontSize: 32,
+  boxIcon: {
+    width: 36,
+    height: 36,
+    tintColor: '#263C29',
   },
   title: {
     fontSize: 18,

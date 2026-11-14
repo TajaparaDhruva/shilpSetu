@@ -273,21 +273,8 @@ export async function getCustomerOrders(page = 1, limit = 10, status = 'all') {
     }
   }
 
-  // Filter fallback orders locally
-  let filtered = [...FALLBACK_ORDERS];
-  if (status && status !== 'all') {
-    const s = status.toLowerCase();
-    filtered = filtered.filter((o) => {
-      const st = (o.order_status || o.status || '').toLowerCase();
-      if (s === 'processing') return ['pending', 'confirmed', 'processing', 'packed'].includes(st);
-      if (s === 'shipped') return ['shipped', 'out_for_delivery'].includes(st);
-      if (s === 'delivered') return ['delivered', 'completed'].includes(st);
-      if (s === 'cancelled') return ['cancelled', 'refunded'].includes(st);
-      return st === s;
-    });
-  }
-
-  return { success: true, orders: filtered, total: filtered.length, page, limit };
+  // Return empty list when no database orders exist for customer
+  return { success: true, orders: [], total: 0, page, limit };
 }
 
 export async function getMyOrders(page = 1, limit = 10, status = 'all') {
@@ -408,14 +395,14 @@ export async function getCustomerOrderCounts() {
     } catch {}
   }
 
-  // Count from local fallback orders
+  // Count from database; default to 0 on empty
   return {
     success: true,
-    all: FALLBACK_ORDERS.length,
+    all: 0,
     processing: 0,
-    shipped: 1,
-    delivered: 1,
-    cancelled: 1,
+    shipped: 0,
+    delivered: 0,
+    cancelled: 0,
   };
 }
 

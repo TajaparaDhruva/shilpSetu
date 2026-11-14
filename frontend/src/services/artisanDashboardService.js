@@ -9,6 +9,7 @@
  */
 
 import { getAccessToken, getCurrentUser } from './auth';
+import { FALLBACK_PRODUCTS } from './productService';
 
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
@@ -148,7 +149,19 @@ export async function getArtisanDashboardProfile() {
     }
   }
 
-  return FALLBACK_ARTISAN_PROFILE;
+  // Return dynamic profile from auth if available, not fake names
+  if (user) {
+    return {
+      id: user.id,
+      name: user.user_metadata?.full_name?.split(' ')[0] || 'Artisan',
+      fullName: user.user_metadata?.full_name || 'Artisan',
+      craftSpecialization: 'Handicraft Artisan',
+      avatarUrl: user.user_metadata?.avatar_url || null,
+      isOnline: true,
+    };
+  }
+
+  return null;
 }
 
 /**
@@ -219,19 +232,49 @@ export async function getArtisanDashboardStats() {
         }
       }
 
+      // Fallback: If REST returned 0 or user is adding products locally, check FALLBACK_PRODUCTS
+      if (totalProducts === 0 && Array.isArray(FALLBACK_PRODUCTS)) {
+        const matchingLocal = FALLBACK_PRODUCTS.filter(
+          (p) => (p.artisan_id === user.id || !p.artisan_id || p.artisan_id === 'artisan-ramesh-1') && p.is_active !== false
+        );
+        if (matchingLocal.length > 0) {
+          totalProducts = matchingLocal.length;
+        }
+      }
+
       return {
         totalProducts,
         totalOrders,
         totalEarnings,
-        averageRating: 4.8,
-        totalReviews: 126,
+        averageRating: 0.0,
+        totalReviews: 0,
       };
     } catch (err) {
       console.warn('getArtisanDashboardStats error:', err);
     }
   }
 
-  return FALLBACK_ARTISAN_STATS;
+  // Count active products from local memory when offline / unauthenticated
+  let fallbackCount = 0;
+  if (Array.isArray(FALLBACK_PRODUCTS)) {
+    const artisanId = user?.id || 'artisan-ramesh-1';
+    fallbackCount = FALLBACK_PRODUCTS.filter(
+      (p) => (p.artisan_id === artisanId || !p.artisan_id || p.artisan_id === 'artisan-ramesh-1') && p.is_active !== false
+    ).length;
+  }
+
+  return {
+    totalProducts: fallbackCount || 0,
+    totalProducts: fallbackCount > 0 ? fallbackCount : 0, // totalProducts: 0 when empty
+    totalOrders: 0,
+    totalEarnings: 0,
+    grossSales: 0,
+    netEarnings: 0,
+    pendingPayout: 0,
+    paidPayouts: 0,
+    averageRating: 0.0,
+    totalReviews: 0,
+  };
 }
 
 /**
@@ -281,7 +324,7 @@ export async function getArtisanRecentOrders(limit = 3) {
     }
   }
 
-  return FALLBACK_ARTISAN_ORDERS.slice(0, limit);
+  return [];
 }
 
 /**

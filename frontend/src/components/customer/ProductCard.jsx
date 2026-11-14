@@ -32,7 +32,13 @@ export default function ProductCard({
   onWishlistPress,
   onArtisanPress,
 }) {
-  const imageSource = IMAGE_MAP[product.imageKey] || colWoodcrafts;
+  const imageUrl =
+    product.image_url ||
+    (Array.isArray(product.image_urls) && product.image_urls.length > 0 ? product.image_urls[0] : null);
+
+  const imageSource = imageUrl
+    ? { uri: imageUrl }
+    : (IMAGE_MAP[product.imageKey] || colWoodcrafts);
 
   return (
     <TouchableOpacity

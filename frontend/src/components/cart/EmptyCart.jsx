@@ -1,14 +1,19 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import { Image } from 'expo-image';
+
+const iconCart = require('@/assets/images/shilpsetu/icon-cart.svg');
 
 export default function EmptyCart({ onShopPress }) {
   return (
     <View style={styles.container}>
-      <Text style={styles.icon}>🛍️</Text>
+      <View style={styles.iconCircle}>
+        <Image source={iconCart} style={styles.cartIcon} contentFit="contain" />
+      </View>
       <Text style={styles.title}>Your cart is empty</Text>
       <Text style={styles.subtitle}>
         Looks like you haven't added anything yet.{'\n'}
-        Explore our handcrafted collection!
+        Explore authentic handmade creations from master artisans!
       </Text>
       <TouchableOpacity
         style={styles.button}
@@ -32,9 +37,19 @@ const styles = StyleSheet.create({
     paddingVertical: 48,
     backgroundColor: '#F8F0E3',
   },
-  icon: {
-    fontSize: 72,
-    marginBottom: 24,
+  iconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#F0E4D4',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+  },
+  cartIcon: {
+    width: 38,
+    height: 38,
+    tintColor: '#263C29',
   },
   title: {
     fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }),
