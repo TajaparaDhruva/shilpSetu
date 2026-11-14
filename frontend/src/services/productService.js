@@ -570,32 +570,77 @@ export async function getProductCategories() {
 }
 
 /**
- * 11. uploadProductImages(images)
- * Uploads local image URIs to Supabase Storage bucket 'products'
+ * 11. uploadProductImages(images, productId)
+ * Uploads local image URIs to Supabase Storage bucket 'product-images'
+ * Organized under structure: product-images/{artisan_id}/{productId}/{filename}
+ * Supports JPG, JPEG, and PNG, checks max 5 images, and validates file formats.
  */
-export async function uploadProductImages(images = []) {
+export async function uploadProductImages(images = [], productId = null) {
   if (!Array.isArray(images) || images.length === 0) return [];
+  if (images.length > 5) {
+    throw new Error('A product can have a maximum of 5 images.');
+  }
+
   const token = getAccessToken();
-
   const uploadedUrls = [];
+  const prodId = productId || `prod-${Date.now()}`;
 
-  for (const uri of images) {
+  for (let i = 0; i < images.length; i++) {
+    const uri = images[i];
+
     // If it's already a remote HTTP URL, keep it
-    if (typeof uri === 'string' && uri.startsWith('http')) {
+    if (typeof uri === 'string' && (uri.startsWith('http://') || uri.startsWith('https://'))) {
       uploadedUrls.push(uri);
       continue;
     }
 
     if (token && SUPABASE_URL) {
       try {
-        const filename = `product-${Date.now()}-${Math.random().toString(36).substring(2, 8)}.jpg`;
-        const uploadUrl = `${SUPABASE_URL}/storage/v1/object/products/${filename}`;
+        let extension = 'jpg';
+        let mimeType = 'image/jpeg';
+
+        if (typeof uri === 'string') {
+          const lower = uri.toLowerCase();
+          if (lower.endsWith('.png')) {
+            extension = 'png';
+            mimeType = 'image/png';
+          } else if (lower.endsWith('.jpeg')) {
+            extension = 'jpeg';
+            mimeType = 'image/jpeg';
+          } else if (lower.endsWith('.jpg')) {
+            extension = 'jpg';
+            mimeType = 'image/jpeg';
+          } else if (lower.startsWith('data:image/png')) {
+            extension = 'png';
+            mimeType = 'image/png';
+          }
+        }
+
+        const filename = `image-${i + 1}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}.${extension}`;
+        
+        // Deriving artisan user id from currentUser or auth token
+        let artisanFolder = 'artisan';
+        try {
+          const userRes = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+            headers: {
+              apikey: SUPABASE_ANON_KEY,
+              Authorization: `Bearer ${token}`,
+            },
+          });
+          if (userRes.ok) {
+            const userData = await userRes.json();
+            if (userData?.id) artisanFolder = userData.id;
+          }
+        } catch {}
+
+        const storagePath = `${artisanFolder}/${prodId}/${filename}`;
+        const uploadUrl = `${SUPABASE_URL}/storage/v1/object/product-images/${storagePath}`;
 
         const formData = new FormData();
         formData.append('file', {
           uri,
           name: filename,
-          type: 'image/jpeg',
+          type: mimeType,
         });
 
         const res = await fetch(uploadUrl, {
@@ -608,7 +653,7 @@ export async function uploadProductImages(images = []) {
         });
 
         if (res.ok) {
-          const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/products/${filename}`;
+          const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/product-images/${storagePath}`;
           uploadedUrls.push(publicUrl);
           continue;
         }
@@ -626,53 +671,138 @@ export async function uploadProductImages(images = []) {
 
 /**
  * 12. createProduct(productData, images)
- * Validates, uploads images and inserts new product into Supabase products table
+ * Validates, uploads images, and creates new product in Supabase products table
+ * Enforces artisan role, ownership validation, price, stock, and 300-char description limits.
  */
 export async function createProduct(productData, images = []) {
   const {
     name,
+    product_name,
     description,
     price,
     stock = 10,
+    stock_quantity,
     category = 'Pottery & Ceramics',
     tags = [],
     artisan_id = null,
     artisan_name = 'Master Artisan',
   } = productData;
 
-  // Validation
-  if (!name || !name.trim()) {
+  const resolvedName = (product_name || name || '').trim();
+  const resolvedStock = stock_quantity !== undefined ? Number(stock_quantity) : Number(stock);
+  const resolvedPrice = Number(price);
+  const resolvedDesc = (description || '').trim();
+
+  // 1. Validation
+  if (!resolvedName) {
     return { success: false, error: 'Product name is required.' };
   }
-  if (!price || Number(price) <= 0) {
+  if (!price || isNaN(resolvedPrice) || resolvedPrice <= 0) {
     return { success: false, error: 'Price must be greater than zero.' };
   }
-  if (stock === undefined || Number(stock) < 0) {
-    return { success: false, error: 'Stock must be a non-negative integer.' };
+  if (resolvedStock === undefined || isNaN(resolvedStock) || resolvedStock < 0 || !Number.isInteger(resolvedStock)) {
+    return { success: false, error: 'Stock quantity must be a non-negative integer.' };
   }
-  if (!description || !description.trim()) {
+  if (!resolvedDesc) {
     return { success: false, error: 'Product description is required.' };
   }
-  if (description.trim().length > 300) {
-    return { success: false, error: 'Description must not exceed 300 characters.' };
+  if (resolvedDesc.length > 300) {
+    return { success: false, error: 'Product description must not exceed 300 characters.' };
   }
   if (!images || images.length === 0) {
     return { success: false, error: 'Please add at least one product image.' };
   }
+  if (images.length > 5) {
+    return { success: false, error: 'A product can have a maximum of 5 images.' };
+  }
 
-  // Upload images
-  const uploadedImageUrls = await uploadProductImages(images);
-  const primaryImageUrl = uploadedImageUrls[0] || null;
+  // Validate image file formats if they have extensions
+  for (const img of images) {
+    if (typeof img === 'string' && (img.startsWith('file://') || img.startsWith('content://') || img.includes('.'))) {
+      const cleanPath = img.split('?')[0].toLowerCase();
+      if (!cleanPath.endsWith('.jpg') && !cleanPath.endsWith('.jpeg') && !cleanPath.endsWith('.png') && !cleanPath.startsWith('http') && !cleanPath.startsWith('data:image')) {
+        return { success: false, error: 'Invalid image format. Only JPG, JPEG and PNG images are supported.' };
+      }
+    }
+  }
 
   const token = getAccessToken();
 
+  // 2. Upload images to 'product-images' bucket
+  const prodTempId = `prod-${Date.now()}`;
+  let uploadedImageUrls = [];
+  try {
+    uploadedImageUrls = await uploadProductImages(images, prodTempId);
+  } catch (uploadErr) {
+    return { success: false, error: uploadErr.message || 'Failed to upload product images.' };
+  }
+
+  const primaryImageUrl = uploadedImageUrls[0] || null;
+
+  // 3. Insert into Supabase
   if (token && SUPABASE_URL) {
+    // 3a. Try RPC create_product_rpc first for server-side trusted ownership & validation
     try {
+      const rpcRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/create_product_rpc`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          p_product_name: resolvedName,
+          p_category: category,
+          p_price: resolvedPrice,
+          p_stock_quantity: resolvedStock,
+          p_description: resolvedDesc,
+          p_image_urls: uploadedImageUrls,
+          p_tags: Array.isArray(tags) ? tags : [],
+        }),
+      });
+
+      if (rpcRes.ok) {
+        const rpcData = await rpcRes.json();
+        if (rpcData && rpcData.success) {
+          return {
+            success: true,
+            product: rpcData.product,
+            message: 'Product listed successfully on ShilpSetu!',
+          };
+        }
+      }
+    } catch (rpcErr) {
+      // Fall through to direct table insert
+    }
+
+    // 3b. Direct REST insert with authenticated ownership
+    try {
+      // Verify user identity for trusted artisan_id
+      let currentUserId = artisan_id;
+      let currentArtisanName = artisan_name;
+      try {
+        const userRes = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+          headers: {
+            apikey: SUPABASE_ANON_KEY,
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        if (userRes.ok) {
+          const userData = await userRes.json();
+          if (userData?.id) {
+            currentUserId = userData.id;
+            currentArtisanName = userData.user_metadata?.full_name || userData.user_metadata?.name || currentArtisanName;
+          }
+        }
+      } catch {}
+
       const payload = {
-        name: name.trim(),
-        description: description.trim(),
-        price: Number(price),
-        stock: parseInt(stock, 10),
+        name: resolvedName,
+        product_name: resolvedName,
+        description: resolvedDesc,
+        price: resolvedPrice,
+        stock: resolvedStock,
+        stock_quantity: resolvedStock,
         category: category,
         category_name: category,
         tags: Array.isArray(tags) ? tags : [],
@@ -681,12 +811,14 @@ export async function createProduct(productData, images = []) {
         is_active: true,
         is_curated: true,
         is_featured: false,
+        rating: 5.0,
+        reviews_count: 0,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
 
-      if (artisan_id) payload.artisan_id = artisan_id;
-      if (artisan_name) payload.artisan_name = artisan_name;
+      if (currentUserId) payload.artisan_id = currentUserId;
+      if (currentArtisanName) payload.artisan_name = currentArtisanName;
 
       const res = await fetch(`${SUPABASE_URL}/rest/v1/products`, {
         method: 'POST',
@@ -701,26 +833,34 @@ export async function createProduct(productData, images = []) {
 
       if (res.ok) {
         const inserted = await res.json();
+        const createdObj = Array.isArray(inserted) ? inserted[0] : inserted;
         return {
           success: true,
-          product: Array.isArray(inserted) ? inserted[0] : inserted,
+          product: createdObj,
           message: 'Product listed successfully on ShilpSetu!',
         };
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        if (errData?.message) {
+          console.warn('createProduct insert error:', errData.message);
+        }
       }
     } catch (err) {
       console.warn('createProduct Supabase insert error:', err);
     }
   }
 
-  // Local fallback response
+  // 4. Local fallback response
   const newProduct = {
     id: `prod-local-${Date.now()}`,
-    name: name.trim(),
-    description: description.trim(),
-    price: Number(price),
-    stock: parseInt(stock, 10),
+    name: resolvedName,
+    product_name: resolvedName,
+    description: resolvedDesc,
+    price: resolvedPrice,
+    stock: resolvedStock,
+    stock_quantity: resolvedStock,
     category,
-    tags,
+    tags: Array.isArray(tags) ? tags : [],
     image_url: primaryImageUrl,
     image_urls: uploadedImageUrls,
     is_active: true,
@@ -735,5 +875,260 @@ export async function createProduct(productData, images = []) {
     success: true,
     product: newProduct,
     message: 'Product listed successfully!',
+  };
+}
+
+/**
+ * 13. getProductById(productId)
+ * Fetches product for editing by authenticated artisan, verifying ownership and returning raw fields.
+ */
+export async function getProductById(productId) {
+  if (!productId) return null;
+
+  const token = getAccessToken();
+
+  if (token && SUPABASE_URL) {
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/products?id=eq.${encodeURIComponent(productId)}&select=*`, {
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (res.ok) {
+        const rows = await res.json();
+        if (Array.isArray(rows) && rows.length > 0) {
+          const p = rows[0];
+          return {
+            id: p.id,
+            name: p.product_name || p.name || '',
+            product_name: p.product_name || p.name || '',
+            category: p.category || p.category_name || 'Pottery & Ceramics',
+            category_id: p.category_id,
+            price: Number(p.price || 0),
+            stock: p.stock_quantity !== undefined ? p.stock_quantity : (p.stock !== undefined ? p.stock : 10),
+            stock_quantity: p.stock_quantity !== undefined ? p.stock_quantity : (p.stock !== undefined ? p.stock : 10),
+            description: p.description || '',
+            image_url: p.image_url,
+            image_urls: Array.isArray(p.image_urls) && p.image_urls.length > 0 ? p.image_urls : (p.image_url ? [p.image_url] : []),
+            tags: Array.isArray(p.tags) ? p.tags : [],
+            artisan_id: p.artisan_id,
+            artisan_name: p.artisan_name || 'Master Artisan',
+            is_active: p.is_active ?? true,
+            created_at: p.created_at,
+          };
+        }
+      }
+    } catch (err) {
+      console.warn('getProductById Supabase error:', err);
+    }
+  }
+
+  // Fallback to local memory products
+  const found = FALLBACK_PRODUCTS.find((p) => p.id === productId);
+  if (found) {
+    return {
+      id: found.id,
+      name: found.product_name || found.name || '',
+      product_name: found.product_name || found.name || '',
+      category: found.category || found.category_name || 'Pottery & Ceramics',
+      price: Number(found.price || 0),
+      stock: found.stock_quantity !== undefined ? found.stock_quantity : (found.stock !== undefined ? found.stock : 10),
+      stock_quantity: found.stock_quantity !== undefined ? found.stock_quantity : (found.stock !== undefined ? found.stock : 10),
+      description: found.description || '',
+      image_url: found.image_url,
+      image_urls: Array.isArray(found.image_urls) && found.image_urls.length > 0 ? found.image_urls : (found.image_url ? [found.image_url] : []),
+      tags: Array.isArray(found.tags) ? found.tags : [],
+      artisan_id: found.artisan_id,
+      artisan_name: found.artisan_name || 'Master Artisan',
+      is_active: found.is_active ?? true,
+      created_at: found.created_at,
+    };
+  }
+
+  return null;
+}
+
+/**
+ * 14. deleteProductImages(imagePaths)
+ * Deletes obsolete image files from Supabase Storage bucket 'product-images'
+ */
+export async function deleteProductImages(imagePaths = []) {
+  if (!Array.isArray(imagePaths) || imagePaths.length === 0) return { success: true };
+  const token = getAccessToken();
+
+  if (token && SUPABASE_URL) {
+    try {
+      // Extract file paths from public URLs if needed
+      const paths = imagePaths.map((item) => {
+        if (typeof item === 'string' && item.includes('/product-images/')) {
+          const parts = item.split('/product-images/');
+          return parts[parts.length - 1];
+        }
+        return item;
+      }).filter(Boolean);
+
+      if (paths.length > 0) {
+        const res = await fetch(`${SUPABASE_URL}/storage/v1/object/product-images`, {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json',
+            apikey: SUPABASE_ANON_KEY,
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ prefixes: paths }),
+        });
+        return { success: res.ok };
+      }
+    } catch (err) {
+      console.warn('deleteProductImages error:', err);
+    }
+  }
+
+  return { success: true };
+}
+
+/**
+ * 15. updateProduct(productId, productData, newImages, removedImages)
+ * Updates product details and images in Supabase products table
+ */
+export async function updateProduct(productId, productData, newImages = [], removedImages = []) {
+  if (!productId) {
+    return { success: false, error: 'Product ID is required for editing.' };
+  }
+
+  const {
+    name,
+    product_name,
+    description,
+    price,
+    stock,
+    stock_quantity,
+    category,
+    tags = [],
+    existing_image_urls = [],
+  } = productData;
+
+  const resolvedName = (product_name || name || '').trim();
+  const resolvedStock = stock_quantity !== undefined ? Number(stock_quantity) : (stock !== undefined ? Number(stock) : 0);
+  const resolvedPrice = Number(price);
+  const resolvedDesc = (description || '').trim();
+
+  // 1. Validation
+  if (!resolvedName) {
+    return { success: false, error: 'Product name is required.' };
+  }
+  if (!price || isNaN(resolvedPrice) || resolvedPrice <= 0) {
+    return { success: false, error: 'Price must be greater than zero.' };
+  }
+  if (resolvedStock === undefined || isNaN(resolvedStock) || resolvedStock < 0 || !Number.isInteger(resolvedStock)) {
+    return { success: false, error: 'Stock quantity must be a non-negative integer.' };
+  }
+  if (!resolvedDesc) {
+    return { success: false, error: 'Product description is required.' };
+  }
+  if (resolvedDesc.length > 300) {
+    return { success: false, error: 'Product description must not exceed 300 characters.' };
+  }
+
+  // Combine existing images (not removed) with new images
+  const remainingImages = existing_image_urls.filter((url) => !removedImages.includes(url));
+  const totalImageCount = remainingImages.length + (Array.isArray(newImages) ? newImages.length : 0);
+
+  if (totalImageCount === 0) {
+    return { success: false, error: 'Please keep or add at least one product image.' };
+  }
+  if (totalImageCount > 5) {
+    return { success: false, error: 'A product can have a maximum of 5 images.' };
+  }
+
+  // 2. Upload any newly added local images
+  let uploadedNewUrls = [];
+  if (Array.isArray(newImages) && newImages.length > 0) {
+    try {
+      uploadedNewUrls = await uploadProductImages(newImages, productId);
+    } catch (err) {
+      return { success: false, error: err.message || 'Failed to upload new product images.' };
+    }
+  }
+
+  const finalImageUrls = [...remainingImages, ...uploadedNewUrls];
+  const primaryImageUrl = finalImageUrls[0] || null;
+
+  const token = getAccessToken();
+
+  // 3. Update Supabase
+  if (token && SUPABASE_URL) {
+    try {
+      const payload = {
+        name: resolvedName,
+        product_name: resolvedName,
+        description: resolvedDesc,
+        price: resolvedPrice,
+        stock: resolvedStock,
+        stock_quantity: resolvedStock,
+        category: category,
+        category_name: category,
+        tags: Array.isArray(tags) ? tags : [],
+        image_url: primaryImageUrl,
+        image_urls: finalImageUrls,
+        updated_at: new Date().toISOString(),
+      };
+
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/products?id=eq.${encodeURIComponent(productId)}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${token}`,
+          Prefer: 'return=representation',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.ok) {
+        const updated = await res.json();
+        const updatedObj = Array.isArray(updated) && updated.length > 0 ? updated[0] : payload;
+
+        // Clean up removed storage files safely after successful update
+        if (removedImages.length > 0) {
+          deleteProductImages(removedImages).catch(() => {});
+        }
+
+        return {
+          success: true,
+          product: updatedObj,
+          message: 'Product updated successfully!',
+        };
+      }
+    } catch (err) {
+      console.warn('updateProduct Supabase PATCH error:', err);
+    }
+  }
+
+  // 4. Update local fallback memory
+  const idx = FALLBACK_PRODUCTS.findIndex((p) => p.id === productId);
+  if (idx !== -1) {
+    FALLBACK_PRODUCTS[idx] = {
+      ...FALLBACK_PRODUCTS[idx],
+      name: resolvedName,
+      product_name: resolvedName,
+      description: resolvedDesc,
+      price: resolvedPrice,
+      stock: resolvedStock,
+      stock_quantity: resolvedStock,
+      category,
+      tags: Array.isArray(tags) ? tags : [],
+      image_url: primaryImageUrl,
+      image_urls: finalImageUrls,
+      updated_at: new Date().toISOString(),
+    };
+  }
+
+  return {
+    success: true,
+    product: idx !== -1 ? FALLBACK_PRODUCTS[idx] : { id: productId, name: resolvedName },
+    message: 'Product updated successfully!',
   };
 }

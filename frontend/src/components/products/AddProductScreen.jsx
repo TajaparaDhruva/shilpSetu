@@ -204,7 +204,7 @@ export default function AddProductScreen() {
           <TouchableOpacity
             style={[styles.toggleBtn, styles.toggleInactive]}
             activeOpacity={0.8}
-            onPress={() => Alert.alert('Edit Product', 'Select a product from your catalog to edit.')}
+            onPress={() => router.push('/(artisan)/products/edit/prod-pot-1')}
           >
             <Text style={styles.toggleInactiveText}>✎ Edit Product</Text>
           </TouchableOpacity>
