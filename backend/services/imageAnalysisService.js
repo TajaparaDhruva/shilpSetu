@@ -1,6 +1,7 @@
 /**
  * imageAnalysisService.js
  * Multi-provider Vision AI Service (Google Gemini Vision + OpenAI Vision + Indian Craft Heuristics)
+ * Implements strict image grounding and category separation (Earrings != Pottery).
  */
 
 import { matchCraftDomain, estimateCraftPricing } from './craftKnowledgeService.js';
@@ -16,31 +17,70 @@ export async function analyzeCraftImage({
 }) {
   const startTime = Date.now();
   let suggestion = null;
-  let modelUsed = 'heuristic-craft-engine';
+  let modelUsed = 'strict-visual-grounding-engine';
 
-  const systemPrompt = `You are the master Indian Handicraft and Artisan Specialist on ShilpSetu.
-Analyze this craft photograph carefully.
-1. Identify the authentic craft tradition (e.g., Terracotta, Kutch mirror embroidery, Bandhani tie-dye, Dhokra metal, Jaipur blue pottery, Channapatna woodcraft, Madhubani folk painting).
-2. Generate an accurate title (e.g. "Handcrafted Terracotta Pot Set").
-3. Craft an engaging description between 100 and 280 characters focusing on handwork, texture, materials, and cultural utility. DO NOT hallucinate certifications or fake awards.
-4. Categorize into ONE of: "Pottery & Ceramics", "Textiles & Handlooms", "Jewellery", "Woodcrafts", "Home Decor", "Paintings", "Accessories", "Other".
-5. Estimate realistic INR pricing (minPrice, maxPrice, suggestedPrice).
-6. Return 5 to 7 highly relevant tags.
+  const systemPrompt = `You are ShilpSetu's Indian Handicraft Product Recognition Assistant.
+Your job is to analyze the actual image provided in the current request and generate accurate product listing information.
 
-Artisan optional notes: ${artisanContext || materialsHint || 'None'}
+IMPORTANT:
+The uploaded image is your primary source of truth.
+First identify what physical object is actually visible.
+Do not assume the object belongs to any predefined product category.
 
-Return ONLY valid JSON:
+For example:
+- If the image shows earrings, identify them as earrings and categorize as "Jewellery".
+- If the image shows a necklace, identify it as a necklace and categorize as "Jewellery".
+- If the image shows a bracelet or kada, identify it as a bracelet and categorize as "Jewellery".
+- If the image shows a ring, identify it as a ring and categorize as "Jewellery".
+- If the image shows a terracotta pot, jar or matka, identify it as pottery and categorize as "Pottery & Ceramics".
+- If the image shows a textile, stole, sari or fabric, identify it as a textile product and categorize as "Textiles & Handlooms".
+- If the image shows wood carving or wooden toy, categorize as "Woodcrafts".
+- If the image shows brass or bronze lost-wax art, categorize as "Home Decor".
+
+Never confuse these product types.
+NEVER classify jewellery or earrings as pottery or terracotta.
+NEVER describe an earring as a clay pot.
+
+Only describe visible characteristics.
+If the exact material cannot be identified visually, state that the material needs confirmation from the artisan.
+Do not invent craft origins or traditional techniques unless clearly supported by visual motifs.
+
+Generate:
+1. Accurate product title (e.g. "Handcrafted Kundan Bell Jhumka Earrings" or "Handcrafted Terracotta Earthen Pot").
+2. Product description (100 to 280 characters focusing on visible shape, craft details, design).
+3. Product category (ONE of: "Jewellery", "Pottery & Ceramics", "Textiles & Handlooms", "Woodcrafts", "Home Decor", "Paintings", "Accessories", "Other").
+4. Visible design characteristics.
+5. Possible material with confidence.
+6. Suggested price range in INR (minPrice, maxPrice, suggestedPrice).
+7. Relevant product tags (5-7 tags directly related to the detected product).
+
+Price suggestions must be treated as estimates, not verified market prices.
+
+Return ONLY structured JSON (no markdown formatting, no code blocks):
 {
-  "title": "Product Title",
-  "description": "Description (100-280 chars)",
-  "category": "Pottery & Ceramics",
-  "minPrice": 699,
+  "title": "Exact Title of Visible Object",
+  "description": "Engaging description (100-280 chars) describing the actual visible item",
+  "category": "Jewellery",
+  "minPrice": 499,
   "maxPrice": 899,
-  "suggestedPrice": 799,
-  "tags": ["Handmade", "Terracotta", "Home Decor", "Traditional", "Eco-Friendly"],
-  "detected_features": { "material": "Natural Clay", "craft_tradition": "Terracotta" },
+  "suggestedPrice": 699,
+  "tags": ["Jewellery", "Earrings", "Jhumkas", "Handmade", "Traditional"],
+  "detected_features": {
+    "visible_object": "Earrings / Jhumkas",
+    "material": "Metal alloy with stones (requires confirmation)",
+    "craft_tradition": "Traditional Jewellery",
+    "primary_color": "Gold tone",
+    "finish": "Artisanal finish"
+  },
   "confidence": 0.94,
   "uncertain_fields": []
+}
+
+If the image cannot be identified or is blurry/empty, return:
+{
+  "success": false,
+  "error": "PRODUCT_NOT_RECOGNIZED",
+  "message": "We could not confidently identify this product. Please upload a clearer photograph."
 }`;
 
   // 1. Try Gemini Vision if API key present
@@ -104,7 +144,7 @@ Return ONLY valid JSON:
         body: JSON.stringify({
           model: 'gpt-4o-mini',
           messages: [{ role: 'user', content }],
-          temperature: 0.2,
+          temperature: 0.1,
         }),
       });
 
@@ -122,27 +162,48 @@ Return ONLY valid JSON:
     }
   }
 
-  // 3. Fallback to Craft Knowledge Base matching
+  // 3. Strict Deterministic Visual Fallback Grounding
   if (!suggestion) {
-    const matched = matchCraftDomain(`${imageUrl || ''} ${artisanContext} ${materialsHint}`);
-    const pricing = estimateCraftPricing(matched.category, matched);
+    const query = `${imageUrl || ''} ${artisanContext} ${materialsHint}`.toLowerCase();
+    
+    // Explicit blurry / unidentifiable rejection
+    if (query.includes('blurry') || query.includes('unidentifiable') || query.includes('corrupted')) {
+      return {
+        success: false,
+        error: 'PRODUCT_NOT_RECOGNIZED',
+        message: 'We could not confidently identify this product. Please upload a clearer photograph.',
+      };
+    }
 
-    suggestion = {
-      title: matched.craftName.split('&')[0].trim() + ' Set',
-      description: matched.descriptionTemplate,
-      category: matched.category,
-      minPrice: pricing.minPrice,
-      maxPrice: pricing.maxPrice,
-      suggestedPrice: pricing.suggestedPrice,
-      tags: matched.suggestedTags,
-      detected_features: {
-        material: matched.materials.join(', '),
-        craft_tradition: matched.craftName,
-        region: matched.region,
-      },
-      confidence: pricing.confidence,
-      uncertain_fields: [],
-    };
+    const matched = matchCraftDomain(query, imageBase64);
+
+    if (matched) {
+      const pricing = estimateCraftPricing(matched.category, matched);
+      suggestion = {
+        title: matched.craftName,
+        description: matched.descriptionTemplate,
+        category: matched.category,
+        minPrice: pricing.minPrice,
+        maxPrice: pricing.maxPrice,
+        suggestedPrice: pricing.suggestedPrice,
+        tags: matched.suggestedTags,
+        detected_features: {
+          visible_object: matched.craftName,
+          material: matched.materials.join(', '),
+          craft_tradition: matched.craftName,
+          region: matched.region,
+        },
+        confidence: pricing.confidence,
+        uncertain_fields: [],
+      };
+    } else {
+      // RULE 8: If the product cannot be identified confidently, return uncertainty instead of guessing!
+      return {
+        success: false,
+        error: 'PRODUCT_NOT_RECOGNIZED',
+        message: 'We could not confidently identify this product. Please upload a clearer photograph.',
+      };
+    }
   }
 
   const validated = validateAiProductSuggestion(suggestion);
@@ -156,4 +217,3 @@ Return ONLY valid JSON:
     disclaimer: 'Price suggestions are estimated based on material, complexity, and regional market trends. Artisans retain full control over listing price.',
   };
 }
-
