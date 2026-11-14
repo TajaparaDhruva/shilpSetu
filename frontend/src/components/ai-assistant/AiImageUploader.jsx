@@ -105,9 +105,8 @@ export default function AiImageUploader({
       'Upload Product Image',
       'Choose how to upload your craft photograph:',
       [
-        { text: 'Take Photo', onPress: captureFromCamera },
+        { text: 'Take Photo with Camera', onPress: captureFromCamera },
         { text: 'Choose from Gallery', onPress: pickFromGallery },
-        { text: 'Use Reference Craft Sample', onPress: () => onImageSelected({ uri: Image.resolveAssetSource(craftPottery).uri }) },
         { text: 'Cancel', style: 'cancel' },
       ]
     );

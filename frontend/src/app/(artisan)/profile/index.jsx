@@ -187,6 +187,20 @@ export default function ArtisanProfileRoute() {
             <View style={styles.linksCard}>
               <TouchableOpacity
                 style={styles.linkRow}
+                onPress={() => router.push('/(artisan)/ai-assistant')}
+              >
+                <Text style={styles.linkIcon}>✨</Text>
+                <View style={styles.linkTextCol}>
+                  <Text style={[styles.linkTitle, { color: '#263C29', fontWeight: '700' }]}>AI Product Assistant</Text>
+                  <Text style={styles.linkDesc}>Generate titles, descriptions & smart tags</Text>
+                </View>
+                <Text style={styles.linkArrow}>›</Text>
+              </TouchableOpacity>
+
+              <View style={styles.rowDivider} />
+
+              <TouchableOpacity
+                style={styles.linkRow}
                 onPress={() => router.push('/(artisan)/products')}
               >
                 <Text style={styles.linkIcon}>📦</Text>

@@ -98,7 +98,10 @@ export default function AiProductAssistantScreen() {
       if (res && res.success && res.suggestion) {
         setSuggestion(res.suggestion);
       } else {
-        Alert.alert('AI Error', 'Could not analyze craft photo. Please retry.');
+        Alert.alert(
+          'Product Recognition',
+          res?.message || 'We could not confidently identify this product. Please upload a clearer photograph.'
+        );
       }
     } catch (err) {
       Alert.alert('Analysis Failed', err.message || 'Unable to process image with AI.');
