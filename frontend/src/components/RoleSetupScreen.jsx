@@ -20,6 +20,7 @@ import PrimaryButton from './PrimaryButton';
 import { ShilpColors } from '@/constants/shilpSetuTheme';
 import { getCurrentUser } from '@/services/auth';
 import { setUserRole, getUserProfile } from '@/services/profileService';
+import { useAuth } from '@/context/AuthContext';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -36,6 +37,7 @@ const potteryIcon = require('@/assets/images/shilpsetu/icon-pottery.svg');
 
 export default function RoleSetupScreen() {
   const router = useRouter();
+  const auth = useAuth();
 
   const [selectedRole, setSelectedRole] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -64,8 +66,9 @@ export default function RoleSetupScreen() {
         }
 
         if (mounted) {
-          if (profile && profile.role) {
-            setSelectedRole(profile.role);
+          const effectiveRole = profile?.role || user.user_metadata?.role || user.app_metadata?.role;
+          if (effectiveRole) {
+            setSelectedRole(effectiveRole);
           }
           setInitializing(false);
         }
@@ -88,13 +91,17 @@ export default function RoleSetupScreen() {
     setErrorMessage('');
 
     try {
-      await setUserRole(selectedRole);
+      if (auth) {
+        await auth.saveRole(selectedRole);
+      } else {
+        await setUserRole(selectedRole);
+      }
 
       // Navigate based on role
       if (selectedRole === 'customer') {
-        router.replace('/customer-home');
+        router.replace('/(customer)/home');
       } else if (selectedRole === 'artisan') {
-        router.replace('/artisan-dashboard');
+        router.replace('/(artisan)/dashboard');
       }
     } catch (err) {
       const message = err.message || 'Failed to save your role. Please try again.';

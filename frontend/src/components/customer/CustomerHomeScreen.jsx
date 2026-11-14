@@ -158,9 +158,15 @@ export default function CustomerHomeScreen() {
     if (tabKey === 'profile') {
       Alert.alert(
         'Account & Profile',
-        'Would you like to log out of ShilpSetu?',
+        'Choose an action:',
         [
           { text: 'Cancel', style: 'cancel', onPress: () => setActiveTab('home') },
+          {
+            text: 'Switch to Artisan Mode',
+            onPress: () => {
+              router.replace('/(artisan)/dashboard');
+            },
+          },
           {
             text: 'Logout',
             style: 'destructive',

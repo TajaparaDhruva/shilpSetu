@@ -41,7 +41,9 @@ function assertConfigured() {
   }
 }
 
-// ── Public API ──────────────────────────────────────────────
+// Backward-compatible alias matching requirement
+export const getCurrentUserProfile = getUserProfile;
+export const saveUserRole = setUserRole;
 
 /**
  * Set the authenticated user's role via the set_user_role RPC.
@@ -113,6 +115,22 @@ export async function setUserRole(role) {
     data?.error?.includes('schema cache');
 
   if (isStillSchemaError) {
+    // 3a. Save role directly to Supabase Auth user metadata so it persists across sessions
+    try {
+      await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+        method: 'PUT',
+        headers: authHeaders(token),
+        body: JSON.stringify({
+          data: {
+            role,
+            is_artisan: role === 'artisan',
+          },
+        }),
+      });
+    } catch {
+      // ignore
+    }
+
     if (userId) {
       try {
         const updateRes = await fetch(
@@ -173,12 +191,27 @@ export async function getUserRole() {
       return { role: null, profileExists: false, error: 'NOT_AUTHENTICATED' };
     }
 
-    const profile = await getUserProfile();
-    if (!profile) {
-      return { role: null, profileExists: false, error: null };
+    let profile = null;
+    try {
+      profile = await getUserProfile();
+    } catch {
+      // ignore
     }
 
-    return { role: profile.role || null, profileExists: true, error: null };
+    let role = profile?.role || user.user_metadata?.role || user.app_metadata?.role || null;
+
+    if (role !== 'artisan') {
+      try {
+        const artisanRecord = await getArtisanProfile();
+        if (artisanRecord) {
+          role = 'artisan';
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    return { role: role || null, profileExists: Boolean(profile), error: null };
   } catch (err) {
     return {
       role: null,

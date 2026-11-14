@@ -65,7 +65,7 @@ export default function ArtisanDashboardScreen() {
 
   const handleActionPress = (actionId) => {
     if (actionId === 'add_product') {
-      Alert.alert('Add Product', 'Opening Add Product studio...');
+      router.push('/(artisan)/products/add');
     } else if (actionId === 'manage_products') {
       Alert.alert('Manage Products', 'Opening Product Inventory...');
     } else if (actionId === 'orders') {

@@ -186,6 +186,40 @@ export async function loginWithEmail(email, password) {
     // If profile cannot be loaded immediately, user object is still valid
   }
 
+  // Cross-check: If profile didn't report artisan, check artisan_profiles table or user_metadata
+  if (!profile || profile.role !== 'artisan') {
+    const isMetaArtisan = (
+      data.user.user_metadata?.role === 'artisan' ||
+      data.user.app_metadata?.role === 'artisan' ||
+      data.user.user_metadata?.is_artisan === true
+    );
+
+    if (isMetaArtisan) {
+      if (!profile) profile = { id: data.user.id };
+      profile.role = 'artisan';
+    } else {
+      // Check if this user exists in artisan_profiles table
+      try {
+        const artEndpoint = `${SUPABASE_URL}/rest/v1/artisan_profiles?user_id=eq.${encodeURIComponent(data.user.id)}&select=id`;
+        const artRes = await fetch(artEndpoint, {
+          headers: {
+            apikey: SUPABASE_ANON_KEY,
+            Authorization: `Bearer ${data.access_token}`,
+          },
+        });
+        if (artRes.ok) {
+          const artRows = await artRes.json();
+          if (Array.isArray(artRows) && artRows.length > 0) {
+            if (!profile) profile = { id: data.user.id };
+            profile.role = 'artisan';
+          }
+        }
+      } catch {
+        // Ignore check errors
+      }
+    }
+  }
+
   return {
     user: data.user,
     session,
@@ -328,6 +362,39 @@ async function processAuthCallbackUrl(url) {
       profile = await getUserProfile(tokenData.user.id, session.access_token);
     } catch {
       // Fallback
+    }
+
+    // Cross-check: If profile didn't report artisan, check artisan_profiles table or user_metadata
+    if (!profile || profile.role !== 'artisan') {
+      const isMetaArtisan = (
+        tokenData.user.user_metadata?.role === 'artisan' ||
+        tokenData.user.app_metadata?.role === 'artisan' ||
+        tokenData.user.user_metadata?.is_artisan === true
+      );
+
+      if (isMetaArtisan) {
+        if (!profile) profile = { id: tokenData.user.id };
+        profile.role = 'artisan';
+      } else {
+        try {
+          const artEndpoint = `${SUPABASE_URL}/rest/v1/artisan_profiles?user_id=eq.${encodeURIComponent(tokenData.user.id)}&select=id`;
+          const artRes = await fetch(artEndpoint, {
+            headers: {
+              apikey: SUPABASE_ANON_KEY,
+              Authorization: `Bearer ${session.access_token}`,
+            },
+          });
+          if (artRes.ok) {
+            const artRows = await artRes.json();
+            if (Array.isArray(artRows) && artRows.length > 0) {
+              if (!profile) profile = { id: tokenData.user.id };
+              profile.role = 'artisan';
+            }
+          }
+        } catch {
+          // Ignore check errors
+        }
+      }
     }
 
     return {
@@ -689,6 +756,26 @@ export async function updateUserRole(role) {
     data?.error?.includes('schema cache');
 
   if (isStillSchemaError) {
+    // 3a. Save role directly to Supabase Auth user metadata so it persists across sessions
+    try {
+      await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          data: {
+            role,
+            is_artisan: role === 'artisan',
+          },
+        }),
+      });
+    } catch {
+      // ignore
+    }
+
     if (userId) {
       try {
         const updateRes = await fetch(
@@ -750,12 +837,41 @@ export async function getUserRole() {
       return { role: null, profileExists: false, error: 'NOT_AUTHENTICATED' };
     }
 
-    const profile = await getUserProfile(user.id);
-    if (!profile) {
-      return { role: null, profileExists: false, error: null };
+    let profile = null;
+    try {
+      profile = await getUserProfile(user.id);
+    } catch {
+      // ignore
     }
 
-    return { role: profile.role || null, profileExists: true, error: null };
+    let role = profile?.role || user.user_metadata?.role || user.app_metadata?.role || null;
+
+    if (role !== 'artisan') {
+      try {
+        const token = getAccessToken();
+        if (token) {
+          const artRes = await fetch(
+            `${SUPABASE_URL}/rest/v1/artisan_profiles?user_id=eq.${encodeURIComponent(user.id)}&select=id`,
+            {
+              headers: {
+                apikey: SUPABASE_ANON_KEY,
+                Authorization: `Bearer ${token}`,
+              },
+            }
+          );
+          if (artRes.ok) {
+            const artRows = await artRes.json();
+            if (Array.isArray(artRows) && artRows.length > 0) {
+              role = 'artisan';
+            }
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    return { role: role || null, profileExists: Boolean(profile), error: null };
   } catch (err) {
     return { role: null, profileExists: false, error: err.message || 'PROFILE_FETCH_FAILED' };
   }
@@ -785,19 +901,45 @@ export async function getInitialRoute() {
       profile = await getUserProfile(user.id);
     } catch {
       // Profile fetch failed (network error, etc.)
-      // Fall through to role-setup so user isn't stuck
+    }
+
+    // Check role across profile, metadata, and artisan table
+    let role = profile?.role || user.user_metadata?.role || user.app_metadata?.role || null;
+
+    if (role !== 'artisan') {
+      try {
+        const token = getAccessToken();
+        if (token) {
+          const artRes = await fetch(
+            `${SUPABASE_URL}/rest/v1/artisan_profiles?user_id=eq.${encodeURIComponent(user.id)}&select=id`,
+            {
+              headers: {
+                apikey: SUPABASE_ANON_KEY,
+                Authorization: `Bearer ${token}`,
+              },
+            }
+          );
+          if (artRes.ok) {
+            const artRows = await artRes.json();
+            if (Array.isArray(artRows) && artRows.length > 0) {
+              role = 'artisan';
+            }
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    if (!role) {
       return '/role-setup';
     }
 
-    if (!profile || !profile.role) {
-      return '/role-setup';
+    if (role === 'artisan') {
+      return '/(artisan)/dashboard';
     }
 
-    if (profile.role === 'artisan') {
-      return '/artisan-dashboard';
-    }
-
-    return '/customer-home';
+    return '/(customer)/home';
   } catch {
     return '/login';
   }
@@ -806,20 +948,30 @@ export async function getInitialRoute() {
 /**
  * I. Determine route after authentication result
  * Takes the auth result (with profile) and returns the target route.
- * @param {{ profile: object | null }} authResult
+ * Checks profile.role, user_metadata.role, app_metadata.role, and is_artisan flag.
+ * @param {{ profile: object | null, user?: object | null }} authResult
  * @returns {string}
  */
 export function getPostAuthRoute(authResult) {
   if (!authResult) return '/login';
 
   const profile = authResult.profile;
-  if (!profile || !profile.role) {
+  const user = authResult.user;
+
+  const role =
+    profile?.role ||
+    user?.user_metadata?.role ||
+    user?.raw_user_meta_data?.role ||
+    user?.app_metadata?.role ||
+    (user?.user_metadata?.is_artisan ? 'artisan' : null);
+
+  if (!role) {
     return '/role-setup';
   }
 
-  if (profile.role === 'artisan') {
-    return '/artisan-dashboard';
+  if (role === 'artisan') {
+    return '/(artisan)/dashboard';
   }
 
-  return '/customer-home';
+  return '/(customer)/home';
 }

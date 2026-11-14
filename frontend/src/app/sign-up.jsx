@@ -24,6 +24,7 @@ import {
   isSupabaseConfigured,
   getPostAuthRoute,
 } from '@/services/auth';
+import { useAuth } from '@/context/AuthContext';
 
 const lotusLogo = require('@/assets/images/shilpsetu/lotus-logo.svg');
 const lotusDivider = require('@/assets/images/shilpsetu/lotus-divider.svg');
@@ -31,17 +32,40 @@ const topRightDecor = require('@/assets/images/shilpsetu/top-right-decor.svg');
 
 export default function SignUpScreen() {
   const router = useRouter();
+  const auth = useAuth();
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
+  const [isConfirmPasswordVisible, setIsConfirmPasswordVisible] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
   const handleSignUp = async () => {
-    if (!email.trim() || !password) {
-      setErrorMessage('Please fill in all required fields');
+    const trimmedName = fullName.trim();
+    const trimmedEmail = email.trim().toLowerCase();
+
+    if (!trimmedName) {
+      setErrorMessage('Please enter your full name');
+      return;
+    }
+    if (!trimmedEmail) {
+      setErrorMessage('Please enter your email address');
+      return;
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(trimmedEmail)) {
+      setErrorMessage('Please enter a valid email address');
+      return;
+    }
+    if (!password || password.length < 6) {
+      setErrorMessage('Password must be at least 6 characters');
+      return;
+    }
+    if (password !== confirmPassword) {
+      setErrorMessage('Passwords do not match. Please check and try again.');
       return;
     }
 
@@ -55,7 +79,9 @@ export default function SignUpScreen() {
     }
 
     try {
-      const result = await signUpWithEmail(email, password, fullName);
+      const result = auth
+        ? await auth.signUp(trimmedEmail, password, trimmedName)
+        : await signUpWithEmail(trimmedEmail, password, trimmedName);
 
       if (result.needsEmailConfirmation) {
         Alert.alert(
@@ -64,11 +90,8 @@ export default function SignUpScreen() {
           [{ text: 'Go to Login', onPress: () => router.replace('/login') }]
         );
       } else {
-        Alert.alert(
-          'Account Created',
-          'Your account has been created successfully! Welcome to ShilpSetu.',
-          [{ text: 'Continue', onPress: () => router.replace('/role-setup') }]
-        );
+        // Navigate immediately to Role & Profile Setup screen
+        router.replace('/role-setup');
       }
     } catch (err) {
       setErrorMessage(err.message || 'Registration failed.');
@@ -81,7 +104,7 @@ export default function SignUpScreen() {
     setGoogleLoading(true);
     setErrorMessage('');
     try {
-      const result = await loginWithGoogle();
+      const result = auth ? await auth.loginWithGoogle() : await loginWithGoogle();
       const route = getPostAuthRoute(result);
       router.replace(route);
     } catch (err) {
@@ -164,6 +187,20 @@ export default function SignUpScreen() {
                 showPasswordToggle
                 isPasswordVisible={isPasswordVisible}
                 onTogglePasswordVisibility={() => setIsPasswordVisible(!isPasswordVisible)}
+              />
+
+              <AuthInput
+                icon="lock"
+                placeholder="Confirm password"
+                value={confirmPassword}
+                onChangeText={(t) => {
+                  setConfirmPassword(t);
+                  if (errorMessage) setErrorMessage('');
+                }}
+                secureTextEntry
+                showPasswordToggle
+                isPasswordVisible={isConfirmPasswordVisible}
+                onTogglePasswordVisibility={() => setIsConfirmPasswordVisible(!isConfirmPasswordVisible)}
               />
 
               <PrimaryButton

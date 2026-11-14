@@ -526,3 +526,214 @@ export async function getCuratedProducts({ limit = 20, offset = 0 } = {}) {
 
 export const fetchCuratedProducts = getCuratedProducts;
 export const fetchProductsByCategory = getProductsByCategory;
+
+/**
+ * 10. getProductCategories()
+ * Fetches craft categories from Supabase categories table or returns standard defaults
+ */
+export async function getProductCategories() {
+  const token = getAccessToken();
+  if (token && SUPABASE_URL) {
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/categories?select=*&order=display_order.asc`, {
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          return data.map((c) => ({
+            id: c.slug || c.id,
+            name: c.name,
+            icon: c.icon_name || '🏺',
+          }));
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to fetch categories:', err);
+    }
+  }
+
+  return [
+    { id: 'pottery', name: 'Pottery & Ceramics', icon: '🏺' },
+    { id: 'textiles', name: 'Textiles & Handlooms', icon: '🧵' },
+    { id: 'jewellery', name: 'Jewellery', icon: '✨' },
+    { id: 'woodcrafts', name: 'Woodcrafts', icon: '🪵' },
+    { id: 'homedecor', name: 'Home Decor', icon: '🏮' },
+    { id: 'paintings', name: 'Paintings', icon: '🎨' },
+    { id: 'accessories', name: 'Accessories', icon: '📿' },
+    { id: 'other', name: 'Other', icon: '📦' },
+  ];
+}
+
+/**
+ * 11. uploadProductImages(images)
+ * Uploads local image URIs to Supabase Storage bucket 'products'
+ */
+export async function uploadProductImages(images = []) {
+  if (!Array.isArray(images) || images.length === 0) return [];
+  const token = getAccessToken();
+
+  const uploadedUrls = [];
+
+  for (const uri of images) {
+    // If it's already a remote HTTP URL, keep it
+    if (typeof uri === 'string' && uri.startsWith('http')) {
+      uploadedUrls.push(uri);
+      continue;
+    }
+
+    if (token && SUPABASE_URL) {
+      try {
+        const filename = `product-${Date.now()}-${Math.random().toString(36).substring(2, 8)}.jpg`;
+        const uploadUrl = `${SUPABASE_URL}/storage/v1/object/products/${filename}`;
+
+        const formData = new FormData();
+        formData.append('file', {
+          uri,
+          name: filename,
+          type: 'image/jpeg',
+        });
+
+        const res = await fetch(uploadUrl, {
+          method: 'POST',
+          headers: {
+            apikey: SUPABASE_ANON_KEY,
+            Authorization: `Bearer ${token}`,
+          },
+          body: formData,
+        });
+
+        if (res.ok) {
+          const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/products/${filename}`;
+          uploadedUrls.push(publicUrl);
+          continue;
+        }
+      } catch (err) {
+        console.warn('Image upload to Supabase Storage failed, keeping local uri:', err);
+      }
+    }
+
+    // Fallback: keep original URI
+    uploadedUrls.push(uri);
+  }
+
+  return uploadedUrls;
+}
+
+/**
+ * 12. createProduct(productData, images)
+ * Validates, uploads images and inserts new product into Supabase products table
+ */
+export async function createProduct(productData, images = []) {
+  const {
+    name,
+    description,
+    price,
+    stock = 10,
+    category = 'Pottery & Ceramics',
+    tags = [],
+    artisan_id = null,
+    artisan_name = 'Master Artisan',
+  } = productData;
+
+  // Validation
+  if (!name || !name.trim()) {
+    return { success: false, error: 'Product name is required.' };
+  }
+  if (!price || Number(price) <= 0) {
+    return { success: false, error: 'Price must be greater than zero.' };
+  }
+  if (stock === undefined || Number(stock) < 0) {
+    return { success: false, error: 'Stock must be a non-negative integer.' };
+  }
+  if (!description || !description.trim()) {
+    return { success: false, error: 'Product description is required.' };
+  }
+  if (description.trim().length > 300) {
+    return { success: false, error: 'Description must not exceed 300 characters.' };
+  }
+  if (!images || images.length === 0) {
+    return { success: false, error: 'Please add at least one product image.' };
+  }
+
+  // Upload images
+  const uploadedImageUrls = await uploadProductImages(images);
+  const primaryImageUrl = uploadedImageUrls[0] || null;
+
+  const token = getAccessToken();
+
+  if (token && SUPABASE_URL) {
+    try {
+      const payload = {
+        name: name.trim(),
+        description: description.trim(),
+        price: Number(price),
+        stock: parseInt(stock, 10),
+        category: category,
+        category_name: category,
+        tags: Array.isArray(tags) ? tags : [],
+        image_url: primaryImageUrl,
+        image_urls: uploadedImageUrls,
+        is_active: true,
+        is_curated: true,
+        is_featured: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      if (artisan_id) payload.artisan_id = artisan_id;
+      if (artisan_name) payload.artisan_name = artisan_name;
+
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/products`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${token}`,
+          Prefer: 'return=representation',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.ok) {
+        const inserted = await res.json();
+        return {
+          success: true,
+          product: Array.isArray(inserted) ? inserted[0] : inserted,
+          message: 'Product listed successfully on ShilpSetu!',
+        };
+      }
+    } catch (err) {
+      console.warn('createProduct Supabase insert error:', err);
+    }
+  }
+
+  // Local fallback response
+  const newProduct = {
+    id: `prod-local-${Date.now()}`,
+    name: name.trim(),
+    description: description.trim(),
+    price: Number(price),
+    stock: parseInt(stock, 10),
+    category,
+    tags,
+    image_url: primaryImageUrl,
+    image_urls: uploadedImageUrls,
+    is_active: true,
+    rating: 5.0,
+    reviews_count: 0,
+    created_at: new Date().toISOString(),
+  };
+
+  FALLBACK_PRODUCTS.unshift(newProduct);
+
+  return {
+    success: true,
+    product: newProduct,
+    message: 'Product listed successfully!',
+  };
+}

@@ -25,6 +25,7 @@ import {
   isSupabaseConfigured,
   getPostAuthRoute,
 } from '@/services/auth';
+import { useAuth } from '@/context/AuthContext';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -38,6 +39,7 @@ const checkIcon = require('@/assets/images/shilpsetu/icon-check.svg');
 
 export default function LoginScreen({ onLoginSuccess }) {
   const router = useRouter();
+  const auth = useAuth();
 
   // Form State
   const [email, setEmail] = useState('');
@@ -104,7 +106,7 @@ export default function LoginScreen({ onLoginSuccess }) {
     setAuthError('');
 
     try {
-      const data = await loginWithEmail(email, password);
+      const data = auth ? await auth.login(email, password) : await loginWithEmail(email, password);
       if (onLoginSuccess) {
         onLoginSuccess(data);
       } else {
@@ -125,7 +127,7 @@ export default function LoginScreen({ onLoginSuccess }) {
     setAuthError('');
 
     try {
-      const result = await loginWithGoogle();
+      const result = auth ? await auth.loginWithGoogle() : await loginWithGoogle();
       if (onLoginSuccess) {
         onLoginSuccess(result);
       } else {
