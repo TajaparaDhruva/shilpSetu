@@ -32,6 +32,7 @@ export const PERIOD_FILTERS = [
 
 /**
  * 1. Fetch Dynamic Earnings Analytics based on selected period filter
+ * Calls get_artisan_earnings_summary RPC function
  */
 export async function getArtisanEarningsAnalytics(period = 'this_month') {
   const token = getAccessToken();
@@ -39,7 +40,7 @@ export async function getArtisanEarningsAnalytics(period = 'this_month') {
 
   if (user && token && SUPABASE_URL) {
     try {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_artisan_earnings_analytics_rpc`, {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_artisan_earnings_summary`, {
         method: 'POST',
         headers: authHeaders(token),
         body: JSON.stringify({ p_period: period }),
@@ -51,6 +52,9 @@ export async function getArtisanEarningsAnalytics(period = 'this_month') {
           return {
             period: data.period || period,
             totalEarnings: data.total_earnings ?? 0,
+            grossSales: data.gross_sales ?? 0,
+            commission: data.commission ?? 0,
+            refunds: data.refunds ?? 0,
             priorEarnings: data.prior_earnings ?? 0,
             growthPercentage: data.growth_percentage ?? 0,
             isGrowth: data.is_growth ?? true,
@@ -73,6 +77,9 @@ export async function getArtisanEarningsAnalytics(period = 'this_month') {
   return {
     period,
     totalEarnings: 0,
+    grossSales: 0,
+    commission: 0,
+    refunds: 0,
     priorEarnings: 0,
     growthPercentage: 0,
     isGrowth: true,
@@ -87,18 +94,54 @@ export async function getArtisanEarningsAnalytics(period = 'this_month') {
 }
 
 /**
- * 2. Fetch Paginated Transactions List
+ * 2. Fetch Monthly Earnings Chart Series
+ * Calls get_artisan_monthly_earnings RPC function
  */
-export async function getArtisanTransactions(limit = 20, offset = 0) {
+export async function getArtisanMonthlyEarnings(period = 'last_3_months') {
   const token = getAccessToken();
   const user = await getCurrentUser();
 
   if (user && token && SUPABASE_URL) {
     try {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_artisan_transactions_rpc`, {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_artisan_monthly_earnings`, {
         method: 'POST',
         headers: authHeaders(token),
-        body: JSON.stringify({ p_limit: limit, p_offset: offset }),
+        body: JSON.stringify({ p_period: period }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.success && Array.isArray(data.series)) {
+          return data.series;
+        }
+      }
+    } catch (err) {
+      console.warn('getArtisanMonthlyEarnings RPC error:', err.message);
+    }
+  }
+
+  return [];
+}
+
+/**
+ * 3. Fetch Paginated Transactions List
+ * Calls get_artisan_transactions RPC function
+ */
+export async function getArtisanTransactions(limit = 20, offset = 0, startDate = null, endDate = null) {
+  const token = getAccessToken();
+  const user = await getCurrentUser();
+
+  if (user && token && SUPABASE_URL) {
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_artisan_transactions`, {
+        method: 'POST',
+        headers: authHeaders(token),
+        body: JSON.stringify({
+          p_limit: limit,
+          p_offset: offset,
+          p_start_date: startDate,
+          p_end_date: endDate,
+        }),
       });
 
       if (res.ok) {
