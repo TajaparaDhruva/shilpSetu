@@ -98,13 +98,6 @@ export default function ArtisanProductsSection({
                   </Text>
                   <View style={styles.priceRow}>
                     <Text style={styles.priceText}>₹{price.toLocaleString('en-IN')}</Text>
-                    <TouchableOpacity
-                      style={styles.editBtn}
-                      activeOpacity={0.8}
-                      onPress={() => onEditPress && onEditPress(item)}
-                    >
-                      <Text style={styles.editBtnText}>Edit</Text>
-                    </TouchableOpacity>
                   </View>
                 </View>
               </View>

@@ -196,28 +196,13 @@ export default function AddProductScreen() {
           <Text style={styles.pageSubtitle}>List your handmade craft on ShilpSetu</Text>
         </View>
 
-        {/* Add/Edit Toggle */}
+        {/* Top Action Toggle: Add Product + AI Assistant */}
         <View style={styles.toggleRow}>
-          <TouchableOpacity
+          <View
             style={[styles.toggleBtn, styles.toggleActive]}
-            activeOpacity={0.9}
           >
             <Text style={styles.toggleActiveText}>+ Add Product</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.toggleBtn, styles.toggleInactive]}
-            activeOpacity={0.8}
-            onPress={() => {
-              if (existingProducts.length > 0) {
-                router.push(`/(artisan)/products/edit/${existingProducts[0].id}`);
-              } else {
-                router.push('/(artisan)/products');
-              }
-            }}
-          >
-            <Text style={styles.toggleInactiveText}>✎ Edit Product</Text>
-          </TouchableOpacity>
+          </View>
 
           <TouchableOpacity
             style={[styles.toggleBtn, styles.toggleInactive, { borderColor: '#A85E2B', borderWidth: 1 }]}
