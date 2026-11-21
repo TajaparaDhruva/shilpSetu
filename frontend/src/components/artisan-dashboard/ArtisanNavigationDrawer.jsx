@@ -92,6 +92,8 @@ export default function ArtisanNavigationDrawer({
                       onClose();
                       if (item.id === 'orders') {
                     router.push('/(artisan)/orders');
+                  } else if (item.id === 'earnings') {
+                    router.push('/(artisan)/earnings');
                   } else {
                     onSelectOption(item.id);
                   }

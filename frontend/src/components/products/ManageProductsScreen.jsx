@@ -281,7 +281,7 @@ export default function ManageProductsScreen() {
     } else if (tabKey === 'orders') {
       router.push('/(artisan)/orders');
     } else if (tabKey === 'earnings') {
-      Alert.alert('Earnings', 'Opening artisan revenue analytics...');
+      router.push('/(artisan)/earnings');
     } else if (tabKey === 'profile') {
       router.push('/(artisan)/profile');
     }

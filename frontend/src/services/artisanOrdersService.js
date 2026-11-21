@@ -342,6 +342,38 @@ export async function cancelArtisanOrder(orderId, reason) {
   return { success: true, message: 'Order cancelled successfully.' };
 }
 
+/**
+ * 7. Get Single Order Details (Secure RPC)
+ */
+export async function getArtisanOrderDetails(orderId) {
+  if (!orderId) return { success: false, error: 'Order ID is required' };
+  const token = getAccessToken();
+
+  if (token && SUPABASE_URL) {
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_artisan_order_details_rpc`, {
+        method: 'POST',
+        headers: authHeaders(token),
+        body: JSON.stringify({ p_order_id: orderId }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.success && data.order) {
+          return { success: true, order: data.order };
+        }
+      }
+    } catch (err) {
+      console.warn('getArtisanOrderDetails RPC error:', err.message);
+    }
+  }
+
+  const local = inMemoryOrders.find((o) => o.id === orderId || o.order_number === orderId);
+  if (local) {
+    return { success: true, order: local };
+  }
+  return { success: false, error: 'Order not found' };
+}
+
 function updateLocalMemoryOrderStatus(orderId, newStatus, extra = {}) {
   const idx = inMemoryOrders.findIndex((o) => o.id === orderId || o.order_number === orderId);
   if (idx !== -1) {

@@ -79,7 +79,7 @@ export default function ArtisanDashboardScreen() {
     } else if (actionId === 'orders') {
       router.push('/(artisan)/orders');
     } else if (actionId === 'earnings') {
-      Alert.alert('My Earnings', 'Opening Financial Analytics & Payouts...');
+      router.push('/(artisan)/earnings');
     }
   };
 
@@ -115,7 +115,7 @@ export default function ArtisanDashboardScreen() {
     } else if (tabKey === 'orders') {
       router.push('/(artisan)/orders');
     } else if (tabKey === 'earnings') {
-      Alert.alert('Earnings', 'Viewing your revenue breakdown...');
+      router.push('/(artisan)/earnings');
     } else if (tabKey === 'profile') {
       router.push('/(artisan)/profile');
     }
