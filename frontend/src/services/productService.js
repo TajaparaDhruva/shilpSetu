@@ -370,7 +370,7 @@ export async function getProductDetails(productId) {
 
       // 3. Direct products table query
       const prodRes = await fetch(
-        `${SUPABASE_URL}/rest/v1/products?id=eq.${encodeURIComponent(productId)}&is_active=eq.true&select=*`,
+        `${SUPABASE_URL}/rest/v1/products?id=eq.${encodeURIComponent(productId)}&is_active=neq.false&select=*`,
         { headers: authHeaders() }
       );
       if (prodRes.ok) {
@@ -384,7 +384,22 @@ export async function getProductDetails(productId) {
     }
   }
 
-  return null;
+  // 4. Check persistent locally saved products (e.g. newly created products)
+  try {
+    const persistentSaved = await getPersistentProducts();
+    if (Array.isArray(persistentSaved)) {
+      const match = persistentSaved.find((p) => p.id === productId || String(p.id) === String(productId));
+      if (match && match.is_active !== false) {
+        return mapProduct(match);
+      }
+    }
+  } catch {
+    // Fall through
+  }
+
+  // 5. Fallback products
+  const fallback = FALLBACK_PRODUCTS.find((p) => p.id === productId);
+  return fallback && fallback.is_active !== false ? mapProduct(fallback) : null;
 }
 
 /**
@@ -1038,8 +1053,38 @@ export async function getProductById(productId) {
     }
   }
 
-  // Fallback to local memory products
-  const found = FALLBACK_PRODUCTS.find((p) => p.id === productId);
+  // 3. Fallback to locally saved persistent products
+  try {
+    const persistentSaved = await getPersistentProducts();
+    if (Array.isArray(persistentSaved)) {
+      const match = persistentSaved.find((p) => p.id === productId || String(p.id) === String(productId));
+      if (match) {
+        return {
+          id: match.id,
+          name: match.product_name || match.name || '',
+          product_name: match.product_name || match.name || '',
+          category: match.category || match.category_name || 'Pottery & Ceramics',
+          price: Number(match.price || 0),
+          stock: match.stock_quantity !== undefined ? match.stock_quantity : (match.stock !== undefined ? match.stock : 10),
+          stock_quantity: match.stock_quantity !== undefined ? match.stock_quantity : (match.stock !== undefined ? match.stock : 10),
+          description: match.description || '',
+          image_url: match.image_url,
+          image_urls: Array.isArray(match.image_urls) && match.image_urls.length > 0 ? match.image_urls : (match.image_url ? [match.image_url] : []),
+          tags: Array.isArray(match.tags) ? match.tags : [],
+          artisan_id: match.artisan_id,
+          artisan_name: match.artisan_name || 'Master Artisan',
+          is_active: match.is_active ?? true,
+          created_at: match.created_at,
+          updated_at: match.updated_at,
+        };
+      }
+    }
+  } catch {
+    // Fall through
+  }
+
+  // 4. Fallback to local memory products
+  const found = FALLBACK_PRODUCTS.find((p) => p.id === productId || String(p.id) === String(productId));
   if (found) {
     return {
       id: found.id,

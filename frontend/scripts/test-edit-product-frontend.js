@@ -67,8 +67,7 @@ runTest('3. Selected product summary card displays thumbnail, name, price, stock
   assert(editContent.includes('summaryArrow'), 'Must render right arrow icon');
 });
 
-runTest('4. Add/Edit toggle renders with Edit Product active in forest green', () => {
-  assert(editContent.includes('+ Add Product'), 'Must display + Add Product option');
+runTest('4. Edit Product header renders with active styling in forest green', () => {
   assert(editContent.includes('✎ Edit Product'), 'Must display ✎ Edit Product option');
   assert(editContent.includes('toggleActive'), 'Must have active styling');
   assert(editContent.includes('#263C29'), 'Active button uses forest green (#263C29)');

@@ -34,6 +34,7 @@ export default function ProductImageGallery({
   onSelectImage,
   isWishlisted = false,
   onWishlistPress,
+  showWishlist = true,
 }) {
   const fallbackImg = FALLBACK_IMAGE_MAP[imageKey] || bannerPottery;
 
@@ -73,19 +74,21 @@ export default function ProductImageGallery({
 
         {/* Action Buttons: Wishlist & Share in top-right */}
         <View style={styles.overlayActions}>
-          <TouchableOpacity
-            style={styles.iconCircle}
-            onPress={onWishlistPress}
-            activeOpacity={0.8}
-            accessibilityRole="button"
-            accessibilityLabel={isWishlisted ? 'Remove from wishlist' : 'Add to wishlist'}
-          >
-            <Image
-              source={isWishlisted ? heartFilled : heartOutline}
-              style={styles.actionIcon}
-              contentFit="contain"
-            />
-          </TouchableOpacity>
+          {showWishlist && (
+            <TouchableOpacity
+              style={styles.iconCircle}
+              onPress={onWishlistPress}
+              activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityLabel={isWishlisted ? 'Remove from wishlist' : 'Add to wishlist'}
+            >
+              <Image
+                source={isWishlisted ? heartFilled : heartOutline}
+                style={styles.actionIcon}
+                contentFit="contain"
+              />
+            </TouchableOpacity>
+          )}
 
           <TouchableOpacity
             style={styles.iconCircle}

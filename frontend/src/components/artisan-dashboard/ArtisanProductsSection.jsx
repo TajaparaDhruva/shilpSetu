@@ -72,12 +72,12 @@ export default function ArtisanProductsSection({
             const stock = item.stock_quantity ?? item.stock ?? 0;
 
             return (
-              <View style={styles.productCard}>
-                <TouchableOpacity
-                  activeOpacity={0.88}
-                  onPress={() => onViewProductPress && onViewProductPress(item)}
-                  style={styles.cardImageContainer}
-                >
+              <TouchableOpacity
+                style={styles.productCard}
+                activeOpacity={0.88}
+                onPress={() => onViewProductPress && onViewProductPress(item)}
+              >
+                <View style={styles.cardImageContainer}>
                   <Image
                     source={imageSource}
                     style={styles.productImage}
@@ -87,7 +87,7 @@ export default function ArtisanProductsSection({
                   <View style={styles.stockBadge}>
                     <Text style={styles.stockText}>Stock: {stock}</Text>
                   </View>
-                </TouchableOpacity>
+                </View>
 
                 <View style={styles.cardBody}>
                   <Text style={styles.categoryText} numberOfLines={1}>
@@ -100,7 +100,7 @@ export default function ArtisanProductsSection({
                     <Text style={styles.priceText}>₹{price.toLocaleString('en-IN')}</Text>
                   </View>
                 </View>
-              </View>
+              </TouchableOpacity>
             );
           }}
         />

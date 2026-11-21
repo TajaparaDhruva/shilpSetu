@@ -29,11 +29,14 @@ import {
   isInWishlist,
 } from '@/services/wishlistService';
 import { addToCart, getCartCount } from '@/services/cartService';
+import { useAuth } from '@/context/AuthContext';
 
 export default function ProductDetailsScreen({ productId: propProductId }) {
   const router = useRouter();
   const params = useLocalSearchParams();
   const productId = propProductId || params?.id || 'prod-pot-1';
+  const auth = useAuth();
+  const isArtisanUser = auth?.isArtisan;
 
   // Product Data States
   const [product, setProduct] = useState(null);
@@ -155,6 +158,7 @@ export default function ProductDetailsScreen({ productId: propProductId }) {
       {/* Top Header */}
       <ExploreHeader
         cartCount={cartCount}
+        showCart={!isArtisanUser}
         onCartPress={() => router.push('/(customer)/cart')}
         onNotificationPress={() =>
           Alert.alert('Notifications', 'No new notifications.')
@@ -164,7 +168,10 @@ export default function ProductDetailsScreen({ productId: propProductId }) {
       {/* Main Scroll Content */}
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          isArtisanUser && { paddingBottom: 30 },
+        ]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -184,6 +191,7 @@ export default function ProductDetailsScreen({ productId: propProductId }) {
           onSelectImage={setSelectedImageIndex}
           isWishlisted={isWishlisted}
           onWishlistPress={handleWishlistToggle}
+          showWishlist={!isArtisanUser}
         />
 
         {/* B. Product Information (Title, Rating, Price, Discount) */}
@@ -213,25 +221,29 @@ export default function ProductDetailsScreen({ productId: propProductId }) {
         {/* E. Product Highlights (Handmade, Eco-Friendly, Durable) */}
         <ProductHighlights />
 
-        {/* F. Quantity Selector */}
-        <QuantitySelector
-          quantity={quantity}
-          stock={product.stock !== undefined ? product.stock : 10}
-          onChangeQuantity={setQuantity}
-        />
+        {/* F. Quantity Selector - for customers only */}
+        {!isArtisanUser && (
+          <QuantitySelector
+            quantity={quantity}
+            stock={product.stock !== undefined ? product.stock : 10}
+            onChangeQuantity={setQuantity}
+          />
+        )}
 
         {/* Spacing for fixed bottom action bar */}
-        <View style={styles.bottomSpacer} />
+        {!isArtisanUser && <View style={styles.bottomSpacer} />}
       </ScrollView>
 
-      {/* G. Fixed Bottom Action Bar */}
-      <ProductActionBar
-        isWishlisted={isWishlisted}
-        isOutOfStock={isOutOfStock}
-        isAddingToCart={isAddingToCart}
-        onWishlistPress={handleWishlistToggle}
-        onAddToCartPress={handleAddToCart}
-      />
+      {/* G. Fixed Bottom Action Bar - for customers only */}
+      {!isArtisanUser && (
+        <ProductActionBar
+          isWishlisted={isWishlisted}
+          isOutOfStock={isOutOfStock}
+          isAddingToCart={isAddingToCart}
+          onWishlistPress={handleWishlistToggle}
+          onAddToCartPress={handleAddToCart}
+        />
+      )}
     </SafeAreaView>
   );
 }

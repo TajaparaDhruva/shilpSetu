@@ -19,6 +19,7 @@ export default function ExploreHeader({
   onNotificationPress,
   onCartPress,
   cartCount = 0,
+  showCart = true,
 }) {
   const router = useRouter();
 
@@ -62,21 +63,23 @@ export default function ExploreHeader({
           <Image source={iconBell} style={styles.actionIcon} contentFit="contain" />
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.iconButton}
-          onPress={onCartPress || (() => router.push('/(customer)/cart'))}
-          accessibilityRole="button"
-          accessibilityLabel="Shopping cart"
-        >
-          <Image source={iconCart} style={styles.actionIcon} contentFit="contain" />
-          {cartCount > 0 && (
-            <View style={styles.cartBadge}>
-              <Text style={styles.cartBadgeText}>
-                {cartCount > 99 ? '99+' : cartCount}
-              </Text>
-            </View>
-          )}
-        </TouchableOpacity>
+        {showCart && (
+          <TouchableOpacity
+            style={styles.iconButton}
+            onPress={onCartPress || (() => router.push('/(customer)/cart'))}
+            accessibilityRole="button"
+            accessibilityLabel="Shopping cart"
+          >
+            <Image source={iconCart} style={styles.actionIcon} contentFit="contain" />
+            {cartCount > 0 && (
+              <View style={styles.cartBadge}>
+                <Text style={styles.cartBadgeText}>
+                  {cartCount > 99 ? '99+' : cartCount}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        )}
       </View>
     </View>
   );

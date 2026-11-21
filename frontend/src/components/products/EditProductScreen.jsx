@@ -27,6 +27,7 @@ import {
 } from '@/services/productService';
 import { getArtisanDashboardProfile } from '@/services/artisanDashboardService';
 import { ShilpColors } from '@/constants/shilpSetuTheme';
+import { getProductRealImage } from '@/services/productImageService';
 
 const backIcon = require('@/assets/images/shilpsetu/icon-back.svg');
 const lotusLogo = require('@/assets/images/shilpsetu/lotus-logo.svg');
@@ -354,22 +355,13 @@ export default function EditProductScreen() {
           <Text style={styles.pageSubtitle}>Update your product details</Text>
         </View>
 
-        {/* Add/Edit Toggle */}
+        {/* Edit Product Action Header */}
         <View style={styles.toggleRow}>
-          <TouchableOpacity
-            style={[styles.toggleBtn, styles.toggleInactive]}
-            activeOpacity={0.8}
-            onPress={() => router.replace('/(artisan)/products/add')}
-          >
-            <Text style={styles.toggleInactiveText}>+ Add Product</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
+          <View
             style={[styles.toggleBtn, styles.toggleActive]}
-            activeOpacity={0.9}
           >
             <Text style={styles.toggleActiveText}>✎ Edit Product</Text>
-          </TouchableOpacity>
+          </View>
         </View>
 
         {/* Selected Product Summary Card */}
@@ -382,9 +374,9 @@ export default function EditProductScreen() {
         >
           <Image
             source={
-              productData?.image_url && typeof productData.image_url === 'string' && productData.image_url.startsWith('http')
-                ? { uri: productData.image_url }
-                : terracottaPot
+              productData?.image_url || (Array.isArray(productData?.image_urls) && productData.image_urls[0])
+                ? getProductRealImage(productData?.category_name || productData?.category || category, productData?.image_url || productData?.image_urls?.[0])
+                : getProductRealImage(category || 'pottery')
             }
             style={styles.summaryThumb}
             contentFit="cover"
@@ -422,7 +414,7 @@ export default function EditProductScreen() {
             {activeExistingImages.map((uri, idx) => (
               <View key={`exist-${uri}-${idx}`} style={styles.imageCard}>
                 <Image
-                  source={uri.startsWith('http') ? { uri } : terracottaPot}
+                  source={getProductRealImage(category, uri)}
                   style={styles.imageThumb}
                   contentFit="cover"
                 />
