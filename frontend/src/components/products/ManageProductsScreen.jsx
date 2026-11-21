@@ -35,6 +35,7 @@ import QuickStockModal from './QuickStockModal';
 
 import {
   getMyProducts,
+  getArtisanInventoryStats,
   deleteProduct,
   duplicateProduct,
   updateProductStock,
@@ -63,6 +64,7 @@ export default function ManageProductsScreen() {
 
   // Products Data
   const [products, setProducts] = useState([]);
+  const [serverStats, setServerStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -83,12 +85,14 @@ export default function ManageProductsScreen() {
   // Load Data
   const loadData = useCallback(async () => {
     try {
-      const [pProfile, myProds] = await Promise.all([
+      const [pProfile, myProds, invStats] = await Promise.all([
         getArtisanDashboardProfile().catch(() => null),
         getMyProducts().catch(() => []),
+        getArtisanInventoryStats().catch(() => null),
       ]);
       if (pProfile) setArtisan(pProfile);
       setProducts(Array.isArray(myProds) ? myProds : []);
+      if (invStats) setServerStats(invStats);
     } catch (err) {
       console.warn('Failed to load manage products data:', err);
     } finally {
@@ -111,6 +115,10 @@ export default function ManageProductsScreen() {
 
   // Inventory Statistics Computation
   const stats = useMemo(() => {
+    if (serverStats && serverStats.total !== undefined) {
+      return serverStats;
+    }
+
     let total = products.length;
     let inStock = 0;
     let lowStock = 0;
@@ -128,7 +136,7 @@ export default function ManageProductsScreen() {
     });
 
     return { total, inStock, lowStock, outOfStock };
-  }, [products]);
+  }, [products, serverStats]);
 
   // Dynamic Filtering & Search
   const filteredProducts = useMemo(() => {
@@ -271,7 +279,7 @@ export default function ManageProductsScreen() {
     } else if (tabKey === 'products') {
       // already on products
     } else if (tabKey === 'orders') {
-      Alert.alert('Orders', 'Viewing artisan orders...');
+      router.push('/(artisan)/orders');
     } else if (tabKey === 'earnings') {
       Alert.alert('Earnings', 'Opening artisan revenue analytics...');
     } else if (tabKey === 'profile') {

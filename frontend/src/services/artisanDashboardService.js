@@ -34,46 +34,21 @@ export const FALLBACK_ARTISAN_PROFILE = {
   isOnline: true,
 };
 
-// Fallback stats matching the screenshot: 42 Products, 1250 Orders, ₹1,24,560 Earnings, 4.8 Rating (126 Reviews)
+// Fallback stats: Default to zeroes when no database records exist
 export const FALLBACK_ARTISAN_STATS = {
-  totalProducts: 42,
-  totalOrders: 1250,
-  totalEarnings: 124560,
-  grossSales: 131115,
-  netEarnings: 124560,
-  pendingPayout: 124560,
+  totalProducts: 0,
+  totalOrders: 0,
+  totalEarnings: 0,
+  grossSales: 0,
+  netEarnings: 0,
+  pendingPayout: 0,
   paidPayouts: 0,
-  averageRating: 4.8,
-  totalReviews: 126,
+  averageRating: 0.0,
+  totalReviews: 0,
 };
 
-// Fallback recent orders matching the screenshot
-export const FALLBACK_ARTISAN_ORDERS = [
-  {
-    id: 'ord-10456',
-    orderNumber: 'SS10456',
-    productName: 'Terracotta Pot Set',
-    price: 799,
-    quantity: 1,
-    status: 'new',
-    statusLabel: 'New',
-    imageKey: 'pottery',
-    imageUrl: null,
-    createdAt: '2026-10-28T10:24:00Z',
-  },
-  {
-    id: 'ord-10421',
-    orderNumber: 'SS10421',
-    productName: 'Traditional Jhumkas',
-    price: 599,
-    quantity: 1,
-    status: 'packed',
-    statusLabel: 'Packed',
-    imageKey: 'accessories',
-    imageUrl: null,
-    createdAt: '2026-10-24T15:15:00Z',
-  },
-];
+// Fallback recent orders: empty when no real customer orders exist
+export const FALLBACK_ARTISAN_ORDERS = [];
 
 /**
  * 1. Fetch authenticated artisan profile
@@ -362,11 +337,11 @@ export async function getArtisanOrderCounts() {
 
   return {
     success: true,
-    new: 1,
+    new: 0,
     processing: 0,
-    packed: 1,
+    packed: 0,
     shipped: 0,
-    delivered: 1,
+    delivered: 0,
     cancelled: 0,
   };
 }

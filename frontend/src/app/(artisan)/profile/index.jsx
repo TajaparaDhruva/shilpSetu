@@ -70,7 +70,7 @@ export default function ArtisanProfileRoute() {
     } else if (tabKey === 'products') {
       router.push('/(artisan)/products');
     } else if (tabKey === 'orders') {
-      Alert.alert('Orders', 'Viewing orders for your products...');
+      router.push('/(artisan)/orders');
     } else if (tabKey === 'earnings') {
       Alert.alert('Earnings', 'Viewing your revenue breakdown...');
     } else if (tabKey === 'profile') {

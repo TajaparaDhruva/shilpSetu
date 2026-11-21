@@ -1394,10 +1394,11 @@ export async function getMyProducts() {
   const token = getAccessToken();
   if (token && SUPABASE_URL) {
     try {
-      // 1. Try secure RPC function
-      const rpcRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_my_artisan_products`, {
+      // 1. Try secure Manage Artisan Products RPC function
+      const rpcRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/manage_artisan_products_rpc`, {
         method: 'POST',
         headers: authHeaders(),
+        body: JSON.stringify({ p_filter: 'all', p_limit: 100, p_offset: 0 }),
       });
       if (rpcRes.ok) {
         const rpcData = await rpcRes.json();
@@ -1406,7 +1407,19 @@ export async function getMyProducts() {
         }
       }
 
-      // 2. Direct REST query respecting artisan_id ownership
+      // 2. Fallback to get_my_artisan_products RPC
+      const legacyRpcRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_my_artisan_products`, {
+        method: 'POST',
+        headers: authHeaders(),
+      });
+      if (legacyRpcRes.ok) {
+        const legacyRpcData = await legacyRpcRes.json();
+        if (legacyRpcData && legacyRpcData.success && Array.isArray(legacyRpcData.products)) {
+          return legacyRpcData.products.map(mapProduct);
+        }
+      }
+
+      // 3. Direct REST query respecting artisan_id ownership
       let currentUserId = null;
       try {
         const userRes = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
@@ -1438,36 +1451,51 @@ export async function getMyProducts() {
     }
   }
 
-  // 2. Combine with persistent on-device products so they remain saved across logouts/restarts
+  // 4. Return persistent on-device products created by the artisan
   const persistentSaved = await getPersistentProducts();
   if (Array.isArray(persistentSaved) && persistentSaved.length > 0) {
-    for (const p of persistentSaved) {
-      if (!FALLBACK_PRODUCTS.some((fp) => fp.id === p.id)) {
-        FALLBACK_PRODUCTS.unshift(p);
-      }
-    }
-  }
-
-  // Return ONLY products belonging to this artisan from local cache / persistent store
-  if (Array.isArray(FALLBACK_PRODUCTS)) {
     const user = await getCurrentUser();
     const currentUserId = user?.id;
-    if (currentUserId) {
-      const myProds = FALLBACK_PRODUCTS.filter(
-        (p) => (p.artisan_id === currentUserId || (p.id && String(p.id).startsWith('prod-local-'))) && p.is_active !== false
-      );
-      if (myProds.length > 0) {
-        return myProds.map(mapProduct);
-      }
-    }
-    // If not authenticated or no matching ID, return persistent crafts created on device
-    const localNew = FALLBACK_PRODUCTS.filter(
-      (p) => p.id && String(p.id).startsWith('prod-local-') && p.is_active !== false
+    const filtered = persistentSaved.filter(
+      (p) => (!currentUserId || p.artisan_id === currentUserId || (p.id && String(p.id).startsWith('prod-local-'))) && p.is_active !== false
     );
-    return localNew.map(mapProduct);
+    if (filtered.length > 0) {
+      return filtered.map(mapProduct);
+    }
   }
 
+  // Strictly no hardcoded fallback products when database or persistent list is empty
   return [];
+}
+
+/**
+ * 16b. getArtisanInventoryStats()
+ * Fetches dynamic inventory statistics from Supabase RPC get_artisan_inventory_stats_rpc
+ */
+export async function getArtisanInventoryStats() {
+  const token = getAccessToken();
+  if (token && SUPABASE_URL) {
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_artisan_inventory_stats_rpc`, {
+        method: 'POST',
+        headers: authHeaders(),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.success) {
+          return {
+            total: data.total ?? 0,
+            inStock: data.in_stock ?? 0,
+            lowStock: data.low_stock ?? 0,
+            outOfStock: data.out_of_stock ?? 0,
+          };
+        }
+      }
+    } catch (err) {
+      console.warn('getArtisanInventoryStats error:', err.message);
+    }
+  }
+  return null;
 }
 
 /**
@@ -1512,11 +1540,33 @@ export async function deleteProduct(productId) {
 
 /**
  * 18. duplicateProduct(product)
- * Creates an independent duplicate of an artisan's product with "(Copy)" suffix
+ * Creates an independent duplicate of an artisan's product with initial stock 0
  */
 export async function duplicateProduct(product) {
   if (!product) return { success: false, error: 'Product details are required.' };
+  const productId = product.id;
+  const token = getAccessToken();
 
+  // Try server-side atomic RPC first
+  if (token && SUPABASE_URL && productId && !String(productId).startsWith('prod-local-')) {
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/duplicate_artisan_product_rpc`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ p_product_id: productId }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.success && data.product) {
+          return { success: true, product: mapProduct(data.product) };
+        }
+      }
+    } catch (err) {
+      console.warn('duplicateProduct RPC error:', err.message);
+    }
+  }
+
+  // Client-side fallback with stock set to 0 initially
   const originalName = (product.name || product.product_name || 'Handmade Craft').trim();
   const copyName = originalName.includes('(Copy)') ? originalName : `${originalName} (Copy)`;
   const rawImages = product.image_urls || product.images || (product.imageUrl ? [product.imageUrl] : []);
@@ -1526,7 +1576,7 @@ export async function duplicateProduct(product) {
     description: product.description || 'Handcrafted traditional artisan product.',
     category: product.category || product.category_name || 'Pottery & Ceramics',
     price: Number(product.price) || 499,
-    stock: Number(product.stock !== undefined ? product.stock : product.stock_quantity || 10),
+    stock: 0, // Initial stock set to 0 as required
     tags: Array.isArray(product.tags) ? [...product.tags] : ['Handmade'],
     artisan_id: product.artisan_id || null,
     artisan_name: product.artisan_name || 'Artisan',
@@ -1548,6 +1598,26 @@ export async function updateProductStock(productId, newStock) {
   const token = getAccessToken();
   if (token && SUPABASE_URL) {
     try {
+      // 1. Try server-side atomic update RPC
+      const rpcRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/update_artisan_stock_rpc`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ p_product_id: productId, p_new_stock: parsedStock }),
+      });
+      if (rpcRes.ok) {
+        const data = await rpcRes.json();
+        if (data && data.success) {
+          await updatePersistentProduct(productId, { stock: parsedStock, stock_quantity: parsedStock });
+          const fIdx = FALLBACK_PRODUCTS.findIndex((p) => p.id === productId);
+          if (fIdx !== -1) {
+            FALLBACK_PRODUCTS[fIdx].stock = parsedStock;
+            FALLBACK_PRODUCTS[fIdx].stock_quantity = parsedStock;
+          }
+          return { success: true, stock: parsedStock, status: data.stock_status };
+        }
+      }
+
+      // 2. Direct REST fallback
       const res = await fetch(`${SUPABASE_URL}/rest/v1/products?id=eq.${encodeURIComponent(productId)}`, {
         method: 'PATCH',
         headers: {

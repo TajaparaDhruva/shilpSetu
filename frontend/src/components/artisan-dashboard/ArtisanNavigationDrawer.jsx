@@ -8,6 +8,7 @@ import {
   StyleSheet,
   Platform,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { ShilpColors } from '@/constants/shilpSetuTheme';
@@ -33,6 +34,7 @@ export default function ArtisanNavigationDrawer({
   artisan,
   onSelectOption,
 }) {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
 
   return (
@@ -88,7 +90,11 @@ export default function ArtisanNavigationDrawer({
                     activeOpacity={0.7}
                     onPress={() => {
                       onClose();
-                      onSelectOption(item.id);
+                      if (item.id === 'orders') {
+                    router.push('/(artisan)/orders');
+                  } else {
+                    onSelectOption(item.id);
+                  }
                     }}
                   >
                     <Text style={styles.itemIcon}>{item.icon}</Text>
