@@ -1509,3 +1509,79 @@ export async function deleteProduct(productId) {
 
   return { success: true };
 }
+
+/**
+ * 18. duplicateProduct(product)
+ * Creates an independent duplicate of an artisan's product with "(Copy)" suffix
+ */
+export async function duplicateProduct(product) {
+  if (!product) return { success: false, error: 'Product details are required.' };
+
+  const originalName = (product.name || product.product_name || 'Handmade Craft').trim();
+  const copyName = originalName.includes('(Copy)') ? originalName : `${originalName} (Copy)`;
+  const rawImages = product.image_urls || product.images || (product.imageUrl ? [product.imageUrl] : []);
+
+  const duplicatePayload = {
+    name: copyName,
+    description: product.description || 'Handcrafted traditional artisan product.',
+    category: product.category || product.category_name || 'Pottery & Ceramics',
+    price: Number(product.price) || 499,
+    stock: Number(product.stock !== undefined ? product.stock : product.stock_quantity || 10),
+    tags: Array.isArray(product.tags) ? [...product.tags] : ['Handmade'],
+    artisan_id: product.artisan_id || null,
+    artisan_name: product.artisan_name || 'Artisan',
+  };
+
+  return await createProduct(duplicatePayload, rawImages);
+}
+
+/**
+ * 19. updateProductStock(productId, newStock)
+ * Updates available inventory count for a product and recalculates stock status
+ */
+export async function updateProductStock(productId, newStock) {
+  const parsedStock = parseInt(newStock, 10);
+  if (isNaN(parsedStock) || parsedStock < 0) {
+    return { success: false, error: 'Stock quantity cannot be negative.' };
+  }
+
+  const token = getAccessToken();
+  if (token && SUPABASE_URL) {
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/products?id=eq.${encodeURIComponent(productId)}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          stock: parsedStock,
+          stock_quantity: parsedStock,
+          updated_at: new Date().toISOString(),
+        }),
+      });
+
+      if (res.ok) {
+        await updatePersistentProduct(productId, { stock: parsedStock, stock_quantity: parsedStock });
+        const fIdx = FALLBACK_PRODUCTS.findIndex((p) => p.id === productId);
+        if (fIdx !== -1) {
+          FALLBACK_PRODUCTS[fIdx].stock = parsedStock;
+          FALLBACK_PRODUCTS[fIdx].stock_quantity = parsedStock;
+        }
+        return { success: true, stock: parsedStock };
+      }
+    } catch (err) {
+      console.warn('updateProductStock error:', err.message);
+    }
+  }
+
+  await updatePersistentProduct(productId, { stock: parsedStock, stock_quantity: parsedStock });
+  const fIdx = FALLBACK_PRODUCTS.findIndex((p) => p.id === productId);
+  if (fIdx !== -1) {
+    FALLBACK_PRODUCTS[fIdx].stock = parsedStock;
+    FALLBACK_PRODUCTS[fIdx].stock_quantity = parsedStock;
+  }
+  return { success: true, stock: parsedStock };
+}
+
